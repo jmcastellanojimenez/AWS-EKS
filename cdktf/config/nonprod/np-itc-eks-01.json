@@ -1,0 +1,36 @@
+{
+  "stackName": "ekscdktf",
+  "account": "241533145091",
+  "region": "eu-central-1",
+  "tags": {
+    "environment": "Non-Production",
+    "project": "itc"
+  },
+  "projects": {
+    "itc": {
+      "vpcId": "vpc-0cb09fef6aff8cc94",
+      "k8sVersion": "1.32",
+      "installCilium": true,
+      "bootstrap": false,
+      "nodegroups": [
+        {
+          "nodeName": "default",
+          "nodeSize": "M",
+          "desireNumberNodes": 4
+        },
+        {
+          "nodeName": "amd",
+          "nodeSize": "M",
+          "desireNumberNodes": 4,
+          "instanceType": ["m5d.4xlarge"]
+        },
+        {
+          "nodeName": "intel",
+          "nodeSize": "M",
+          "desireNumberNodes": 1,
+          "instanceType": ["c5.4xlarge"]
+        }
+      ]
+    }
+  }
+}

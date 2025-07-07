@@ -1,0 +1,25 @@
+{
+  "stackName": "ekscdktf",
+  "account": "503561447988",
+  "region": "eu-central-1",
+  "tags": {
+    "environment": "Non-Production",
+    "project": "alpha"
+  },
+  "projects": {
+    "alpha": {
+      "vpcId": "vpc-05be55e03db78dfa8",
+      "k8sVersion": "1.31",
+      "installCilium": false,
+      "bootstrap": false,
+      "nodegroups": [
+        {
+          "nodeName": "cheap-spot",
+          "nodeSize": "XS",
+          "desireNumberNodes": 2,
+          "instanceType": ["t3.small", "t3a.small", "t2.small"]
+        }
+      ]
+    }
+  }
+}

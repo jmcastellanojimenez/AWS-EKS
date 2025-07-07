@@ -1,0 +1,132 @@
+bpf:
+  hostLegacyRouting: false
+cni:
+  customConf: false
+  uninstall: false
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList:
+    - 172.17.0.0/17
+operator:
+  replicas: 3
+  unmanagedPodWatcher:
+    restart: true
+  tolerations:      
+  - key: CriticalAddonsOnly
+    operator: Exists      
+  prometheus:
+    serviceMonitor:
+      enabled: false
+      interval: "15s" # Default dashboards perform rate\irate operations for the last 1m
+      relabelings:
+      - sourceLabels: [__meta_kubernetes_namespace]
+        targetLabel: kubernetes_namespace
+      - sourceLabels: [__meta_kubernetes_endpoint_node_name]
+        targetLabel: kubernetes_node_name
+      - sourceLabels: [__meta_kubernetes_pod_name]
+        targetLabel: kubernetes_pod_name
+      - sourceLabels: [__meta_kubernetes_endpoints_name]
+        targetLabel: kubernetes_name
+policyEnforcementMode: default
+routingMode: tunnel
+serviceAccounts:
+  cilium:
+    name: cilium
+  operator:
+    name: cilium-operator
+tunnelProtocol: geneve
+hubble:
+  relay:
+    enabled: true
+    prometheus:
+      enabled: true
+      serviceMonitor:
+        enabled: false
+        interval: "15s" # Default dashboards perform rate\irate operations for the last 1m
+        relabelings:
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: kubernetes_namespace
+        - sourceLabels: [__meta_kubernetes_endpoint_node_name]
+          targetLabel: kubernetes_node_name
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+        - sourceLabels: [__meta_kubernetes_endpoints_name]
+          targetLabel: kubernetes_name
+  ui: 
+    enabled: true
+#  tls:      
+#    auto:      
+#      method: certmanager
+#      certValidityDuration: 360
+#      certManagerIssuerRef:
+#        group: certmanager.step.sm
+#        kind: StepClusterIssuer
+#        name: epo-internal-pki
+  metrics:
+    enableOpenMetrics: true
+    # https://docs.cilium.io/en/stable/observability/metrics/#hubble-context-options
+    # enabled:
+    # - dns:query;ignoreAAAA;sourceContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;destinationContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;labelsContext=source_namespace,destination_namespace
+    # - drop:sourceContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;destinationContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;labelsContext=source_namespace,destination_namespace
+    # - flow:sourceContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;destinationContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;labelsContext=source_namespace,destination_namespace
+    # - icmp:sourceContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;destinationContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;labelsContext=source_namespace,destination_namespace
+    # - httpV2:sourceContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;destinationContext=workload|pod|app|dns|namespace|ip|identity|reserved-identity;exemplars=true;labelsContext=source_ip,source_namespace,source_workload,destination_ip,destination_namespace,destination_workload,traffic_direction
+    serviceMonitor:
+      enabled: false
+      interval: "15s" # Default dashboards perform rate\irate operations for the last 1m
+      relabelings:
+      - sourceLabels: [__meta_kubernetes_namespace]
+        targetLabel: kubernetes_namespace
+      - sourceLabels: [__meta_kubernetes_endpoint_node_name]
+        targetLabel: kubernetes_node_name
+      - sourceLabels: [__meta_kubernetes_pod_name]
+        targetLabel: kubernetes_pod_name
+      - sourceLabels: [__meta_kubernetes_endpoints_name]
+        targetLabel: kubernetes_name
+      metricRelabelings:
+      - sourceLabels: [verdict]
+        action: keep
+        regex: '^(DROPPED|AUDIT|$)'
+      - sourceLabels: [reason]
+        action: keep
+        regex: '^(CT_MAP_INSERTION_FAILED|$)'
+      - sourceLabels: [__name__, type]
+        action: drop
+        regex: "hubble_icmp_total;(EchoRequest|EchoReply)"
+prometheus:
+  enabled: true
+  metrics: 
+  - -cilium_node_connectivity_status
+  - -cilium_node_connectivity_latency_seconds
+  - +cilium_bpf_syscall_duration_seconds
+  - +cilium_k8s_event_lag_seconds
+  - +hubble_dns_queries_total
+  - +hubble_dns_responses_total
+  - +hubble_dns_response_types_total
+#  serviceMonitor:
+#    trustCRDsExist: true
+#    enabled: true
+#    interval: "15s" # Default dashboards perform rate\irate operations for the last 1m
+#    relabelings:
+#    - sourceLabels: [__meta_kubernetes_namespace]
+#      targetLabel: kubernetes_namespace
+#    - sourceLabels: [__meta_kubernetes_endpoint_node_name]
+#      targetLabel: kubernetes_node_name
+#    - sourceLabels: [__meta_kubernetes_pod_name]
+#      targetLabel: kubernetes_pod_name
+#    - sourceLabels: [__meta_kubernetes_endpoints_name]
+#      targetLabel: kubernetes_name
+envoy:
+  serviceMonitor:
+    enabled: false
+    interval: "15s" # Default dashboards perform rate\irate operations for the last 1m
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_namespace]
+      targetLabel: kubernetes_namespace
+    - sourceLabels: [__meta_kubernetes_endpoint_node_name]
+      targetLabel: kubernetes_node_name
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      targetLabel: kubernetes_pod_name
+    - sourceLabels: [__meta_kubernetes_endpoints_name]
+      targetLabel: kubernetes_name
