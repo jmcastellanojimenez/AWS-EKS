@@ -16,7 +16,7 @@ check_exit_status() {
 show_help() {
   echo "Usage: AWS_REGION must be set before running the script."
   echo "Example:"
-  echo "  AWS_REGION=eu-central-1 ENV=np PROJECT=test ./tf-backend-resources.sh"
+  echo "  AWS_REGION=us-east-1 ENV=np PROJECT=test ./tf-backend-resources.sh"
   exit 1
 }
 
