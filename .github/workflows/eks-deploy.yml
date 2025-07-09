@@ -1,0 +1,184 @@
+name: EKS Cluster Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'Cluster name to deploy (e.g., np-alpha-eks-01-cheap)'
+        required: true
+        type: string
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - destroy
+          - plan
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        default: 'us-east-1'
+        type: string
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'nonprod'
+        type: choice
+        options:
+          - nonprod
+          - prod
+          - sandbox
+
+  push:
+    branches: [ main ]
+    paths:
+      - 'cdktf/**'
+      - '.github/workflows/eks-deploy.yml'
+
+env:
+  AWS_REGION: ${{ inputs.aws_region || 'us-east-1' }}
+  NODE_VERSION: '18'
+  TERRAFORM_VERSION: '1.5.0'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      cluster_name: ${{ steps.set-cluster.outputs.cluster_name }}
+      config_exists: ${{ steps.check-config.outputs.exists }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set cluster name
+        id: set-cluster
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "cluster_name=${{ inputs.cluster_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "cluster_name=np-alpha-eks-01-cheap" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check config file exists
+        id: check-config
+        run: |
+          CLUSTER_NAME="${{ steps.set-cluster.outputs.cluster_name }}"
+          ENV="${{ inputs.environment || 'nonprod' }}"
+          CONFIG_FILE="cdktf/config/${ENV}/${CLUSTER_NAME}.json"
+          
+          if [ -f "$CONFIG_FILE" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Config file found: $CONFIG_FILE"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Config file not found: $CONFIG_FILE"
+            exit 1
+          fi
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: needs.validate.outputs.config_exists == 'true'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-EKS-Deploy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'cdktf/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./cdktf
+        run: npm ci
+
+      - name: Install CDKTF CLI
+        run: npm install -g cdktf-cli@0.20.12
+
+      - name: Generate provider code
+        working-directory: ./cdktf
+        run: cdktf get
+
+      - name: Build TypeScript
+        working-directory: ./cdktf
+        run: npm run build
+
+      - name: Validate configuration
+        working-directory: ./cdktf
+        env:
+          CLUSTER: ${{ needs.validate.outputs.cluster_name }}
+        run: |
+          echo "Validating cluster configuration..."
+          node -e "
+            const config = require('./config/${{ inputs.environment || 'nonprod' }}/${{ needs.validate.outputs.cluster_name }}.json');
+            console.log('Config validation passed for:', JSON.stringify(config, null, 2));
+          "
+
+      - name: Plan deployment
+        working-directory: ./cdktf
+        env:
+          CLUSTER: ${{ needs.validate.outputs.cluster_name }}
+        run: |
+          echo "Planning deployment for cluster: $CLUSTER"
+          cdktf plan
+
+      - name: Deploy EKS cluster
+        if: ${{ inputs.action == 'deploy' || github.event_name == 'push' }}
+        working-directory: ./cdktf
+        env:
+          CLUSTER: ${{ needs.validate.outputs.cluster_name }}
+        run: |
+          echo "Deploying cluster: $CLUSTER"
+          cdktf deploy --auto-approve
+
+      - name: Destroy EKS cluster
+        if: ${{ inputs.action == 'destroy' }}
+        working-directory: ./cdktf
+        env:
+          CLUSTER: ${{ needs.validate.outputs.cluster_name }}
+        run: |
+          echo "Destroying cluster: $CLUSTER"
+          cdktf destroy --auto-approve
+
+      - name: Output cluster info
+        if: ${{ inputs.action == 'deploy' || github.event_name == 'push' }}
+        working-directory: ./cdktf
+        env:
+          CLUSTER: ${{ needs.validate.outputs.cluster_name }}
+        run: |
+          echo "Cluster deployment completed!"
+          echo "Cluster Name: $CLUSTER"
+          echo "Region: $AWS_REGION"
+          echo "Environment: ${{ inputs.environment || 'nonprod' }}"
+
+  notify:
+    needs: [validate, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Notify deployment status
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            echo "✅ EKS cluster deployment successful!"
+            echo "Cluster: ${{ needs.validate.outputs.cluster_name }}"
+            echo "Action: ${{ inputs.action || 'deploy' }}"
+          else
+            echo "❌ EKS cluster deployment failed!"
+            echo "Check the logs for details."
+          fi

@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "eks:*",
+        "ec2:*",
+        "iam:*",
+        "s3:*",
+        "dynamodb:*",
+        "route53:*",
+        "autoscaling:*",
+        "elasticloadbalancing:*",
+        "logs:*",
+        "kms:*",
+        "ssm:*",
+        "secretsmanager:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sts:AssumeRole",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
