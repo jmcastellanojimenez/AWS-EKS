@@ -205,7 +205,7 @@ install_kubernetes_dashboard() {
         --set serviceAccount.create=true \
         --set serviceAccount.name=kubernetes-dashboard \
         --set rbac.create=true \
-        --wait --timeout=300s
+        --timeout=600s
     
     # Create admin user for dashboard
     kubectl apply -f - <<EOF
