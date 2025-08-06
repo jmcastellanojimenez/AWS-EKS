@@ -111,7 +111,7 @@ module "iam" {
 
 # S3 Bucket for storing cluster information and backups
 resource "aws_s3_bucket" "cluster_data" {
-  bucket = "${var.project_name}-${local.environment}-cluster-data-${random_id.bucket_suffix.hex}"
+  bucket = "${var.project_name}-${var.environment}-cluster-data-${random_id.bucket_suffix.hex}"
 
   tags = local.common_tags
 }
@@ -150,7 +150,7 @@ resource "random_id" "bucket_suffix" {
 
 # CloudWatch Dashboard for monitoring
 resource "aws_cloudwatch_dashboard" "eks_cluster" {
-  dashboard_name = "${var.project_name}-${local.environment}-dashboard"
+  dashboard_name = "${var.project_name}-${var.environment}-dashboard"
 
   dashboard_body = jsonencode({
     widgets = [
@@ -201,9 +201,9 @@ resource "aws_cloudwatch_dashboard" "eks_cluster" {
 
 # Cost Budget for the environment
 resource "aws_budgets_budget" "eks_learning_lab" {
-  name       = "${var.project_name}-${local.environment}-budget"
+  name       = "${var.project_name}-${var.environment}-budget"
   budget_type = "COST"
-  limit_amount = local.cost_thresholds[local.environment]
+  limit_amount = local.cost_thresholds[var.environment]
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
   time_period_start = "2024-01-01_00:00"
