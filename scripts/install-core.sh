@@ -256,7 +256,10 @@ install_container_insights() {
     
     kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cwagent/cwagent-daemonset.yaml
     
-    kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/fluentd/fluentd-daemonset-cloudwatch.yaml
+    # Note: Using fluent-bit instead of fluentd (more lightweight and actively maintained)
+    kubectl apply -f https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/fluent-bit/fluent-bit-daemonset-cloudwatch.yaml || {
+        log "FluentBit installation failed, Container Insights will work with CloudWatch agent only"
+    }
     
     log "Container Insights installed successfully"
 }
