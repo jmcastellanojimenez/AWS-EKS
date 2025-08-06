@@ -1,0 +1,286 @@
+name: 💰 Cost Monitoring
+
+on:
+  schedule:
+    # Run daily at 8 AM UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      alert_threshold:
+        description: 'Alert threshold in USD'
+        required: false
+        default: '75'
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+
+jobs:
+  cost-analysis:
+    name: 📊 Daily Cost Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CostMonitoring
+
+      - name: Install AWS CLI and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc
+
+      - name: Get Current Month Costs
+        id: current-costs
+        run: |
+          start_date=$(date -d "$(date +%Y-%m-01)" +%Y-%m-%d)
+          end_date=$(date +%Y-%m-%d)
+          
+          # Get cost for current month
+          cost_response=$(aws ce get-cost-and-usage \
+            --time-period Start=$start_date,End=$end_date \
+            --granularity MONTHLY \
+            --metrics BlendedCost \
+            --group-by Type=DIMENSION,Key=SERVICE \
+            --filter file://<(cat <<EOF
+          {
+            "Dimensions": {
+              "Key": "LINKED_ACCOUNT",
+              "Values": ["${{ secrets.AWS_ACCOUNT_ID }}"]
+            }
+          }
+          EOF
+          ))
+          
+          total_cost=$(echo "$cost_response" | jq -r '.ResultsByTime[0].Total.BlendedCost.Amount // "0"')
+          echo "total_cost=$total_cost" >> $GITHUB_OUTPUT
+          
+          # Get EKS specific costs
+          eks_cost=$(echo "$cost_response" | jq -r '.ResultsByTime[0].Groups[] | select(.Keys[0] == "Amazon Elastic Kubernetes Service") | .Metrics.BlendedCost.Amount // "0"')
+          echo "eks_cost=$eks_cost" >> $GITHUB_OUTPUT
+          
+          # Get EC2 costs (for nodes)
+          ec2_cost=$(echo "$cost_response" | jq -r '.ResultsByTime[0].Groups[] | select(.Keys[0] == "Amazon Elastic Compute Cloud - Compute") | .Metrics.BlendedCost.Amount // "0"')
+          echo "ec2_cost=$ec2_cost" >> $GITHUB_OUTPUT
+          
+          echo "Total cost this month: $$total_cost"
+          echo "EKS cost: $$eks_cost"
+          echo "EC2 cost: $$ec2_cost"
+
+      - name: Get Yesterday's Costs
+        id: daily-costs
+        run: |
+          yesterday=$(date -d "yesterday" +%Y-%m-%d)
+          today=$(date +%Y-%m-%d)
+          
+          daily_response=$(aws ce get-cost-and-usage \
+            --time-period Start=$yesterday,End=$today \
+            --granularity DAILY \
+            --metrics BlendedCost)
+          
+          daily_cost=$(echo "$daily_response" | jq -r '.ResultsByTime[0].Total.BlendedCost.Amount // "0"')
+          echo "daily_cost=$daily_cost" >> $GITHUB_OUTPUT
+          echo "Yesterday's cost: $$daily_cost"
+
+      - name: Get Resource Inventory
+        id: inventory
+        run: |
+          # Check if EKS clusters exist
+          clusters=$(aws eks list-clusters --query 'clusters[]' --output text | wc -w)
+          echo "eks_clusters=$clusters" >> $GITHUB_OUTPUT
+          
+          # Check EC2 instances
+          instances=$(aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].{ID:InstanceId,Type:InstanceType,State:State.Name}' \
+            --output json)
+          
+          instance_count=$(echo "$instances" | jq length)
+          echo "ec2_instances=$instance_count" >> $GITHUB_OUTPUT
+          echo "instances_json=$instances" >> $GITHUB_OUTPUT
+          
+          echo "Active EKS clusters: $clusters"
+          echo "Running EC2 instances: $instance_count"
+
+      - name: Project Monthly Cost
+        id: projection
+        run: |
+          total_cost="${{ steps.current-costs.outputs.total_cost }}"
+          daily_cost="${{ steps.daily-costs.outputs.daily_cost }}"
+          
+          # Calculate days elapsed and remaining in month
+          current_day=$(date +%d)
+          days_in_month=$(date -d "$(date +%Y-%m-01) +1 month -1 day" +%d)
+          days_remaining=$((days_in_month - current_day))
+          
+          # Project monthly cost based on daily average
+          if [[ $current_day -gt 0 ]]; then
+            daily_average=$(echo "scale=2; $total_cost / $current_day" | bc)
+            projected_cost=$(echo "scale=2; $daily_average * $days_in_month" | bc)
+          else
+            projected_cost="0"
+          fi
+          
+          echo "projected_cost=$projected_cost" >> $GITHUB_OUTPUT
+          echo "days_remaining=$days_remaining" >> $GITHUB_OUTPUT
+          echo "Projected monthly cost: $$projected_cost"
+
+      - name: Check Budget Thresholds
+        id: budget-check
+        run: |
+          total_cost="${{ steps.current-costs.outputs.total_cost }}"
+          projected_cost="${{ steps.projection.outputs.projected_cost }}"
+          threshold="${{ inputs.alert_threshold || '75' }}"
+          
+          alert_needed="false"
+          
+          # Check if current cost exceeds threshold
+          if (( $(echo "$total_cost > $threshold" | bc -l) )); then
+            echo "⚠️ Current month cost ($total_cost) exceeds threshold ($threshold)"
+            alert_needed="true"
+          fi
+          
+          # Check if projected cost exceeds budget
+          if (( $(echo "$projected_cost > 100" | bc -l) )); then
+            echo "⚠️ Projected monthly cost ($projected_cost) exceeds budget (100)"
+            alert_needed="true"
+          fi
+          
+          echo "alert_needed=$alert_needed" >> $GITHUB_OUTPUT
+
+      - name: Generate Cost Report
+        run: |
+          cat > cost-report.md << EOF
+          # 💰 Daily Cost Report - $(date +%Y-%m-%d)
+          
+          ## 📊 Cost Summary
+          
+          | Metric | Amount |
+          |--------|--------|
+          | **Current Month Total** | \$\${{ steps.current-costs.outputs.total_cost }} |
+          | **Yesterday's Cost** | \$\${{ steps.daily-costs.outputs.daily_cost }} |
+          | **Projected Monthly** | \$\${{ steps.projection.outputs.projected_cost }} |
+          | **Budget Remaining** | \$$(echo "100 - ${{ steps.current-costs.outputs.total_cost }}" | bc) |
+          
+          ## 🏗️ Service Breakdown
+          
+          | Service | Cost |
+          |---------|------|
+          | **EKS Cluster** | \$\${{ steps.current-costs.outputs.eks_cost }} |
+          | **EC2 Compute** | \$\${{ steps.current-costs.outputs.ec2_cost }} |
+          
+          ## 📈 Resource Inventory
+          
+          - **EKS Clusters**: ${{ steps.inventory.outputs.eks_clusters }}
+          - **EC2 Instances**: ${{ steps.inventory.outputs.ec2_instances }}
+          
+          ## 🎯 Budget Status
+          
+          EOF
+          
+          if [[ "${{ steps.budget-check.outputs.alert_needed }}" == "true" ]]; then
+            echo "⚠️ **BUDGET ALERT**: Costs are approaching or exceeding thresholds!" >> cost-report.md
+            echo "" >> cost-report.md
+            echo "### Recommended Actions:" >> cost-report.md
+            echo "- Review resource usage" >> cost-report.md
+            echo "- Consider scaling down non-essential resources" >> cost-report.md
+            echo "- Run \`destroy\` workflow for unused environments" >> cost-report.md
+          else
+            echo "✅ **Budget Status**: On track" >> cost-report.md
+          fi
+          
+          echo "" >> cost-report.md
+          echo "---" >> cost-report.md
+          echo "*Generated on $(date) by GitHub Actions*" >> cost-report.md
+
+      - name: Update GitHub Step Summary
+        run: |
+          cat cost-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Create GitHub Issue for Alerts
+        if: steps.budget-check.outputs.alert_needed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const costReport = fs.readFileSync('cost-report.md', 'utf8');
+            
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Cost Alert - ${new Date().toISOString().split('T')[0]}`,
+              body: costReport,
+              labels: ['cost-alert', 'urgent']
+            });
+            
+            console.log(`Created issue #${issue.data.number}`);
+
+      - name: Upload Cost Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cost-report-${{ github.run_number }}
+          path: cost-report.md
+
+  cost-optimization-suggestions:
+    name: 🎯 Cost Optimization Analysis
+    runs-on: ubuntu-latest
+    needs: cost-analysis
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CostOptimization
+
+      - name: Analyze Cost Optimization Opportunities
+        run: |
+          echo "## 🎯 Cost Optimization Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for unused EBS volumes
+          unused_volumes=$(aws ec2 describe-volumes \
+            --filters "Name=status,Values=available" \
+            --query 'Volumes[].{ID:VolumeId,Size:Size,Type:VolumeType}' \
+            --output json)
+          
+          volume_count=$(echo "$unused_volumes" | jq length)
+          
+          if [[ $volume_count -gt 0 ]]; then
+            echo "### 💾 Unused EBS Volumes ($volume_count found)" >> $GITHUB_STEP_SUMMARY
+            echo "Consider deleting unused EBS volumes to save costs:" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "$unused_volumes" | jq -r '.[] | "aws ec2 delete-volume --volume-id \(.ID) # \(.Size)GB \(.Type)"' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for stopped instances
+          stopped_instances=$(aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=stopped" \
+            --query 'Reservations[].Instances[].{ID:InstanceId,Type:InstanceType}' \
+            --output json)
+          
+          stopped_count=$(echo "$stopped_instances" | jq length)
+          
+          if [[ $stopped_count -gt 0 ]]; then
+            echo "### 🖥️ Stopped EC2 Instances ($stopped_count found)" >> $GITHUB_STEP_SUMMARY
+            echo "Consider terminating stopped instances if no longer needed:" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "$stopped_instances" | jq -r '.[] | "aws ec2 terminate-instances --instance-ids \(.ID) # \(.Type)"' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "### 💡 General Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "- Use Spot instances for non-critical workloads" >> $GITHUB_STEP_SUMMARY
+          echo "- Schedule cluster shutdown during off-hours" >> $GITHUB_STEP_SUMMARY
+          echo "- Review and optimize resource requests/limits" >> $GITHUB_STEP_SUMMARY
+          echo "- Consider using AWS Fargate for serverless workloads" >> $GITHUB_STEP_SUMMARY

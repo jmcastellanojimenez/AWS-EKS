@@ -1,0 +1,340 @@
+name: 🛠️ Install Kubernetes Tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      cluster_name:
+        description: 'EKS Cluster Name'
+        required: true
+        default: 'eks-learning-lab'
+        type: string
+      tool_category:
+        description: 'Tool Category to Install'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - core
+        - gitops
+        - servicemesh
+        - security
+        - observability
+        - storage
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  KUBECONFIG: /tmp/kubeconfig
+
+jobs:
+  prepare-environment:
+    name: 🔧 Prepare Environment
+    runs-on: ubuntu-latest
+    outputs:
+      cluster-status: ${{ steps.check-cluster.outputs.status }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-ToolsInstall
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-${{ inputs.environment }}
+          path: /tmp/
+
+      - name: Setup Kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Setup Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ inputs.cluster_name }}
+          cp ~/.kube/config $KUBECONFIG
+
+      - name: Check Cluster Status
+        id: check-cluster
+        run: |
+          if kubectl cluster-info; then
+            echo "status=ready" >> $GITHUB_OUTPUT
+            echo "✅ Cluster is ready for tool installation"
+          else
+            echo "status=not-ready" >> $GITHUB_OUTPUT
+            echo "❌ Cluster is not ready"
+            exit 1
+          fi
+
+      - name: Upload Kubeconfig
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: ${{ env.KUBECONFIG }}
+
+  install-core-tools:
+    name: 🔨 Install Core Tools
+    runs-on: ubuntu-latest
+    needs: prepare-environment
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'core')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CoreTools
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install Core Tools
+        run: |
+          chmod +x scripts/install-core.sh
+          ./scripts/install-core.sh ${{ inputs.environment }}
+
+  install-gitops-tools:
+    name: 🔄 Install GitOps Tools
+    runs-on: ubuntu-latest
+    needs: [prepare-environment, install-core-tools]
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'gitops')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-GitOpsTools
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install GitOps Tools
+        run: |
+          chmod +x scripts/install-gitops.sh
+          ./scripts/install-gitops.sh ${{ inputs.environment }}
+
+  install-servicemesh:
+    name: 🕸️ Install Service Mesh
+    runs-on: ubuntu-latest
+    needs: [prepare-environment, install-core-tools]
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'servicemesh')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-ServiceMesh
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install Service Mesh
+        run: |
+          chmod +x scripts/install-servicemesh.sh
+          ./scripts/install-servicemesh.sh ${{ inputs.environment }}
+
+  install-security-tools:
+    name: 🔒 Install Security Tools
+    runs-on: ubuntu-latest
+    needs: [prepare-environment, install-core-tools]
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'security')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-SecurityTools
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install Security Tools
+        run: |
+          chmod +x scripts/install-security.sh
+          ./scripts/install-security.sh ${{ inputs.environment }}
+
+  install-observability:
+    name: 📊 Install Observability Tools
+    runs-on: ubuntu-latest
+    needs: [prepare-environment, install-core-tools]
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'observability')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-ObservabilityTools
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install Observability Tools
+        run: |
+          chmod +x scripts/install-observability.sh
+          ./scripts/install-observability.sh ${{ inputs.environment }}
+
+  verify-installation:
+    name: ✅ Verify Installation
+    runs-on: ubuntu-latest
+    needs: [install-core-tools, install-gitops-tools, install-servicemesh, install-security-tools, install-observability]
+    if: always()
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-VerifyInstall
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+      - name: Verify All Installations
+        run: |
+          echo "## 🛠️ Kubernetes Tools Installation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | Status | Namespace |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Check core tools
+          if kubectl get ns argocd &>/dev/null; then
+            echo "| ArgoCD | ✅ Installed | argocd |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ArgoCD | ❌ Not Found | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if kubectl get ns monitoring &>/dev/null; then
+            echo "| Prometheus/Grafana | ✅ Installed | monitoring |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Prometheus/Grafana | ❌ Not Found | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if kubectl get ns istio-system &>/dev/null; then
+            echo "| Istio | ✅ Installed | istio-system |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Istio | ❌ Not Found | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if kubectl get ns vault &>/dev/null; then
+            echo "| Vault | ✅ Installed | vault |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Vault | ❌ Not Found | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster**: ${{ inputs.cluster_name }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Get cluster info
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Access Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Use the following commands to access your tools:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# ArgoCD UI" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl port-forward svc/argocd-server -n argocd 8080:443" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Grafana UI" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl port-forward svc/grafana -n monitoring 3000:80" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Get ArgoCD admin password" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

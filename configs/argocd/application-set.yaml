@@ -1,0 +1,158 @@
+# ArgoCD ApplicationSet for managing multiple applications
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: learning-lab-apps
+  namespace: argocd
+spec:
+  generators:
+  - list:
+      elements:
+      - cluster: in-cluster
+        url: https://kubernetes.default.svc
+        namespace: default
+        app: guestbook
+        path: guestbook
+        repo: https://github.com/argoproj/argocd-example-apps.git
+      - cluster: in-cluster
+        url: https://kubernetes.default.svc
+        namespace: default
+        app: helm-guestbook
+        path: helm-guestbook
+        repo: https://github.com/argoproj/argocd-example-apps.git
+      - cluster: in-cluster
+        url: https://kubernetes.default.svc
+        namespace: monitoring
+        app: prometheus-config
+        path: monitoring/prometheus
+        repo: https://github.com/your-repo/eks-learning-lab-configs.git
+
+  template:
+    metadata:
+      name: '{{app}}'
+      labels:
+        app: '{{app}}'
+        environment: dev
+    spec:
+      project: default
+      source:
+        repoURL: '{{repo}}'
+        targetRevision: HEAD
+        path: '{{path}}'
+      destination:
+        server: '{{url}}'
+        namespace: '{{namespace}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+        - CreateNamespace=true
+        - PrunePropagationPolicy=foreground
+        - PruneLast=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+---
+# Sample Learning Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sample-web-app
+  namespace: argocd
+  labels:
+    app: sample-web-app
+    environment: dev
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sample-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /spec/replicas
+    - /spec/template/spec/containers/0/image
+
+---
+# ArgoCD Project for Learning Lab
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: learning-lab
+  namespace: argocd
+spec:
+  description: EKS Learning Lab Project
+  sourceRepos:
+  - 'https://github.com/argoproj/argocd-example-apps.git'
+  - 'https://github.com/your-repo/eks-learning-lab-configs.git'
+  - '*'
+  destinations:
+  - namespace: default
+    server: https://kubernetes.default.svc
+  - namespace: sample-apps
+    server: https://kubernetes.default.svc
+  - namespace: monitoring
+    server: https://kubernetes.default.svc
+  - namespace: tracing
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRoleBinding
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRole
+  namespaceResourceWhitelist:
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: ReplicaSet
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Secret
+  - group: extensions
+    kind: Ingress
+  - group: networking.k8s.io
+    kind: Ingress
+  roles:
+  - name: developer
+    description: Developer access to learning lab applications
+    policies:
+    - p, proj:learning-lab:developer, applications, get, learning-lab/*, allow
+    - p, proj:learning-lab:developer, applications, sync, learning-lab/*, allow
+    groups:
+    - dev-team
+  - name: admin
+    description: Admin access to learning lab
+    policies:
+    - p, proj:learning-lab:admin, applications, *, learning-lab/*, allow
+    - p, proj:learning-lab:admin, repositories, *, *, allow
+    groups:
+    - admin-team

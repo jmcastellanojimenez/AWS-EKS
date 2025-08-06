@@ -1,0 +1,132 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+**/kubeconfig*
+
+# AWS
+.aws/
+aws-config.json
+
+# Helm
+charts/
+*.tgz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs  
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Secrets and credentials
+*.key
+*.pem
+*.crt
+*.cert
+*.p12
+*.pfx
+.env
+.env.local
+.env.*.local
+secret*
+*secret*
+credential*
+*credential*
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+build/
+dist/
+
+# Node.js (if using for automation)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python (if using for automation)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Go (if using for automation)
+vendor/
+*.test
+*.prof
+
+# Local development
+.local/
+.cache/
+
+# Documentation builds
+site/
+_site/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Package managers
+Pipfile.lock
+package-lock.json
+yarn.lock
+
+# Cloud provider configs
+gcloud/
+azure/
+
+# Miscellaneous
+*.pid
+*.seed
+*.pid.lock
