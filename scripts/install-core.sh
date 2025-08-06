@@ -243,6 +243,9 @@ install_container_insights() {
     CLUSTER_NAME=$(kubectl config current-context | cut -d'/' -f2 2>/dev/null || echo "eks-learning-lab-${ENVIRONMENT}")
     REGION=$(aws configure get region || echo "us-east-1")
     
+    # Create namespace first
+    kubectl create namespace amazon-cloudwatch || true
+    
     # Download and apply CloudWatch agent
     curl -o cloudwatch-config.json https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/latest/k8s-deployment-manifest-templates/deployment-mode/daemonset/container-insights-monitoring/cloudwatch-config.json
     
