@@ -227,8 +227,8 @@ resource "aws_budgets_budget" "eks_learning_lab" {
   time_period_start = "2024-01-01_00:00"
 
   cost_filter {
-    name   = "TagKey"
-    values = ["Project"]
+    name   = "Service" 
+    values = ["Amazon Elastic Kubernetes Service", "Amazon Elastic Compute Cloud - Compute"]
   }
 
   notification {
