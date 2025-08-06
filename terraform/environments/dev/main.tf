@@ -145,14 +145,12 @@ resource "aws_s3_bucket_versioning" "cluster_data" {
   }
 }
 
-resource "aws_s3_bucket_encryption" "cluster_data" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "cluster_data" {
   bucket = aws_s3_bucket.cluster_data.id
 
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm = "AES256"
-      }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
     }
   }
 }
@@ -217,8 +215,6 @@ resource "aws_cloudwatch_dashboard" "eks_cluster" {
       }
     ]
   })
-
-  tags = local.common_tags
 }
 
 # Cost Budget for the environment
@@ -230,8 +226,9 @@ resource "aws_budgets_budget" "eks_learning_lab" {
   time_unit    = "MONTHLY"
   time_period_start = "2024-01-01_00:00"
 
-  cost_filters = {
-    Tag = ["Project:${var.project_name}"]
+  cost_filter {
+    name   = "TagKey"
+    values = ["Project"]
   }
 
   notification {

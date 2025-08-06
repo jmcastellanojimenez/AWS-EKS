@@ -64,19 +64,9 @@ output "kubeconfig_command" {
   value       = module.eks.kubeconfig_command
 }
 
-output "aws_load_balancer_controller_role_arn" {
-  description = "ARN of the AWS Load Balancer Controller IAM role"
-  value       = module.iam.aws_load_balancer_controller_role_arn
-}
-
-output "external_dns_role_arn" {
-  description = "ARN of the External DNS IAM role"
-  value       = module.iam.external_dns_role_arn
-}
-
-output "cluster_autoscaler_role_arn" {
-  description = "ARN of the Cluster Autoscaler IAM role"
-  value       = module.iam.cluster_autoscaler_role_arn
+output "ebs_csi_driver_role_arn" {
+  description = "ARN of the EBS CSI driver IAM role"
+  value       = module.iam_irsa.ebs_csi_driver_role_arn
 }
 
 output "cluster_data_bucket" {
@@ -105,11 +95,11 @@ output "estimated_monthly_cost" {
 output "environment_info" {
   description = "Information about this environment"
   value = {
-    environment     = local.environment
+    environment     = var.environment
     cost_optimized  = true
     auto_shutdown   = true
     spot_instances  = true
     learning_mode   = true
-    budget_limit    = "$${local.cost_thresholds[local.environment]}"
+    budget_limit    = "$${local.cost_thresholds[var.environment]}"
   }
 }
