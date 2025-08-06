@@ -31,10 +31,19 @@ provider "aws" {
 # Import shared configuration
 module "shared" {
   source = "../../shared"
+  
+  environment  = var.environment
+  cluster_name = var.cluster_name
 }
 
 locals {
-  environment = "dev"
+  # Use shared module outputs
+  common_tags      = module.shared.common_tags
+  cluster_name     = module.shared.cluster_name
+  env_config       = module.shared.env_config
+  security_config  = module.shared.security_config
+  addon_versions   = module.shared.addon_versions
+  cost_thresholds  = module.shared.cost_thresholds
 }
 
 # VPC Module
@@ -42,7 +51,7 @@ module "vpc" {
   source = "../../modules/vpc"
 
   project_name         = var.project_name
-  environment          = local.environment
+  environment          = var.environment
   cluster_name         = local.cluster_name
   vpc_cidr             = var.vpc_cidr
   enable_nat_gateway   = local.env_config.enable_nat_gateway
@@ -55,7 +64,7 @@ module "eks" {
   source = "../../modules/eks"
 
   project_name            = var.project_name
-  environment             = local.environment
+  environment             = var.environment
   cluster_name            = local.cluster_name
   kubernetes_version      = var.kubernetes_version
   vpc_id                  = module.vpc.vpc_id
@@ -93,7 +102,7 @@ module "iam" {
   source = "../../modules/iam"
 
   project_name      = var.project_name
-  environment       = local.environment
+  environment       = var.environment
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
 
