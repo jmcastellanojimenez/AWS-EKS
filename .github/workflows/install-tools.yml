@@ -55,12 +55,6 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           role-session-name: GitHubActions-ToolsInstall
 
-      - name: Download Kubeconfig
-        uses: actions/download-artifact@v4
-        with:
-          name: kubeconfig-${{ inputs.environment }}
-          path: /tmp/
-
       - name: Setup Kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
