@@ -72,7 +72,7 @@ module "eks" {
   private_subnet_ids      = module.vpc.private_subnet_ids
   cluster_role_arn        = module.iam.eks_cluster_role_arn
   node_group_role_arn     = module.iam.eks_node_group_role_arn
-  ebs_csi_driver_role_arn = module.iam.ebs_csi_driver_role_arn
+  ebs_csi_driver_role_arn = module.iam_irsa.ebs_csi_driver_role_arn
 
   # Cost-optimized settings for dev
   instance_types     = local.env_config.instance_types
@@ -97,9 +97,17 @@ module "eks" {
   depends_on = [module.vpc, module.iam]
 }
 
-# IAM Module
+# Basic IAM Module (cluster and node group roles)
 module "iam" {
   source = "../../modules/iam"
+
+  project_name = var.project_name
+  environment  = var.environment
+}
+
+# IRSA IAM Module (roles that depend on OIDC provider)
+module "iam_irsa" {
+  source = "../../modules/iam-irsa"
 
   project_name      = var.project_name
   environment       = var.environment
