@@ -67,8 +67,7 @@ jobs:
 
       - name: Update Kubeconfig
         run: |
-          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ inputs.cluster_name }}
-          cp ~/.kube/config $KUBECONFIG
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ inputs.cluster_name }} --kubeconfig $KUBECONFIG
 
       - name: Check Cluster Status
         id: check-cluster
