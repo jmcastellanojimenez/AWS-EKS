@@ -86,7 +86,7 @@ install_argocd() {
         --set controller.resources.requests.memory="512Mi" \
         --set controller.resources.limits.cpu="500m" \
         --set controller.resources.limits.memory="1Gi" \
-        --wait --timeout=600s
+        --wait --timeout=900s
     
     # Wait for ArgoCD to be ready
     kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
@@ -300,7 +300,7 @@ install_sealed_secrets() {
         --set resources.requests.memory="64Mi" \
         --set resources.limits.cpu="100m" \
         --set resources.limits.memory="128Mi" \
-        --wait --timeout=300s
+        --wait --timeout=600s
     
     # Install kubeseal CLI if not present
     if ! command -v kubeseal &> /dev/null; then

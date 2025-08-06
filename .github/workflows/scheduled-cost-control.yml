@@ -1,15 +1,6 @@
-name: ⏰ Scheduled Cost Control
+name: 💰 Manual Cost Control
 
 on:
-  schedule:
-    # Shutdown Friday at 6 PM UTC (save weekend costs)
-    - cron: '0 18 * * 5'
-    # Startup Monday at 8 AM UTC (resume work week)
-    - cron: '0 8 * * 1'
-    # Daily overnight shutdown at 10 PM UTC
-    - cron: '0 22 * * *'
-    # Daily morning startup at 6 AM UTC
-    - cron: '0 6 * * 1-5'
   workflow_dispatch:
     inputs:
       action:

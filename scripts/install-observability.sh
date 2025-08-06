@@ -84,11 +84,11 @@ install_prometheus_stack() {
         --set grafana.adminPassword=admin123 \
         --set grafana.persistence.enabled=false \
         --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
-        --wait --timeout=600s
+        --wait --timeout=900s
     
     # Wait for all components to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/prometheus-grafana -n monitoring
-    kubectl wait --for=condition=available --timeout=300s deployment/prometheus-kube-prometheus-operator -n monitoring
+    kubectl wait --for=condition=available --timeout=600s deployment/prometheus-grafana -n monitoring
+    kubectl wait --for=condition=available --timeout=600s deployment/prometheus-kube-prometheus-operator -n monitoring
     
     log "Prometheus Stack installed successfully"
 }
@@ -119,10 +119,10 @@ install_jaeger() {
         --set agent.resources.requests.memory=64Mi \
         --set agent.resources.limits.cpu=100m \
         --set agent.resources.limits.memory=128Mi \
-        --wait --timeout=300s
+        --wait --timeout=600s
     
     # Wait for Jaeger to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/jaeger -n tracing
+    kubectl wait --for=condition=available --timeout=600s deployment/jaeger -n tracing
     
     log "Jaeger installed successfully"
 }
@@ -143,13 +143,13 @@ install_opentelemetry() {
         --set resources.requests.memory=64Mi \
         --set resources.limits.cpu=100m \
         --set resources.limits.memory=128Mi \
-        --wait --timeout=300s
+        --wait --timeout=600s
     
     # Install OpenTelemetry Operator
     kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
     
     # Wait for OpenTelemetry Operator to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/opentelemetry-operator-controller-manager -n opentelemetry-operator-system
+    kubectl wait --for=condition=available --timeout=600s deployment/opentelemetry-operator-controller-manager -n opentelemetry-operator-system
     
     # Create OpenTelemetry Collector
     kubectl apply -f - <<EOF
@@ -239,7 +239,7 @@ install_elk_stack() {
         --set resources.limits.memory=2Gi \
         --set volumeClaimTemplate.resources.requests.storage=10Gi \
         --set esConfig."elasticsearch\.yml"="cluster.name: \"docker-cluster\"\nnetwork.host: 0.0.0.0\ndiscovery.type: single-node\nxpack.security.enabled: false" \
-        --wait --timeout=600s
+        --wait --timeout=900s
     
     # Install Kibana
     helm upgrade --install kibana elastic/kibana \
@@ -249,7 +249,7 @@ install_elk_stack() {
         --set resources.limits.cpu=500m \
         --set resources.limits.memory=1Gi \
         --set service.type=ClusterIP \
-        --wait --timeout=300s
+        --wait --timeout=600s
     
     # Install Filebeat
     helm upgrade --install filebeat elastic/filebeat \
@@ -258,7 +258,7 @@ install_elk_stack() {
         --set resources.requests.memory=128Mi \
         --set resources.limits.cpu=200m \
         --set resources.limits.memory=256Mi \
-        --wait --timeout=300s
+        --wait --timeout=600s
     
     log "ELK Stack installed successfully"
 }

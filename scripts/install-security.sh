@@ -80,10 +80,10 @@ install_vault() {
         --set injector.resources.requests.cpu=50m \
         --set injector.resources.limits.memory=128Mi \
         --set injector.resources.limits.cpu=100m \
-        --wait --timeout=300s
+        --wait --timeout=900s
     
     # Wait for Vault to be ready
-    kubectl wait --for=condition=ready --timeout=300s pod/vault-0 -n vault
+    kubectl wait --for=condition=ready --timeout=600s pod/vault-0 -n vault
     
     # Configure Vault for Kubernetes authentication
     kubectl exec -n vault vault-0 -- vault auth enable kubernetes
@@ -115,10 +115,10 @@ install_opa_gatekeeper() {
         --set audit.resources.requests.memory=256Mi \
         --set audit.resources.limits.cpu=500m \
         --set audit.resources.limits.memory=512Mi \
-        --wait --timeout=300s
+        --wait --timeout=900s
     
     # Wait for Gatekeeper to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/gatekeeper-controller-manager -n gatekeeper-system
+    kubectl wait --for=condition=available --timeout=600s deployment/gatekeeper-controller-manager -n gatekeeper-system
     
     # Create sample constraint templates and constraints
     kubectl apply -f - <<EOF
@@ -189,10 +189,10 @@ install_kyverno() {
         --set initContainer.resources.requests.cpu=50m \
         --set initContainer.resources.limits.memory=128Mi \
         --set initContainer.resources.limits.cpu=100m \
-        --wait --timeout=300s
+        --wait --timeout=900s
     
     # Wait for Kyverno to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/kyverno-admission-controller -n kyverno
+    kubectl wait --for=condition=available --timeout=600s deployment/kyverno-admission-controller -n kyverno
     
     # Create sample Kyverno policies
     kubectl apply -f - <<EOF
@@ -274,7 +274,7 @@ install_falco() {
         --set resources.requests.memory=128Mi \
         --set resources.limits.cpu=200m \
         --set resources.limits.memory=256Mi \
-        --wait --timeout=300s
+        --wait --timeout=900s
     
     # Wait for Falco to be ready
     kubectl wait --for=condition=ready --timeout=300s pod -l app.kubernetes.io/name=falco -n falco
@@ -298,10 +298,10 @@ install_trivy_operator() {
         --set operator.resources.requests.memory=64Mi \
         --set operator.resources.limits.cpu=100m \
         --set operator.resources.limits.memory=128Mi \
-        --wait --timeout=300s
+        --wait --timeout=900s
     
     # Wait for Trivy Operator to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/trivy-operator -n trivy-system
+    kubectl wait --for=condition=available --timeout=600s deployment/trivy-operator -n trivy-system
     
     log "Trivy Operator installed successfully"
 }

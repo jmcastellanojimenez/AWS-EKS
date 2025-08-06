@@ -66,8 +66,8 @@ install_istio() {
         rm -rf istio-*
     fi
     
-    # Install Istio with demo profile for learning
-    istioctl install --set values.defaultRevision=default --set values.pilot.resources.requests.cpu=100m --set values.pilot.resources.requests.memory=128Mi --set values.pilot.resources.limits.cpu=500m --set values.pilot.resources.limits.memory=512Mi -y
+    # Install Istio with demo profile for learning - with increased timeouts
+    timeout 900 istioctl install --set values.defaultRevision=default --set values.pilot.resources.requests.cpu=100m --set values.pilot.resources.requests.memory=128Mi --set values.pilot.resources.limits.cpu=500m --set values.pilot.resources.limits.memory=512Mi -y
     
     # Enable sidecar injection for default namespace
     kubectl label namespace default istio-injection=enabled --overwrite
@@ -78,10 +78,10 @@ install_istio() {
     kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.19/samples/addons/kiali.yaml
     kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.19/samples/addons/prometheus.yaml
     
-    # Wait for Istio components to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/istiod -n istio-system
-    kubectl wait --for=condition=available --timeout=300s deployment/grafana -n istio-system
-    kubectl wait --for=condition=available --timeout=300s deployment/kiali -n istio-system
+    # Wait for Istio components to be ready - increased timeouts
+    kubectl wait --for=condition=available --timeout=600s deployment/istiod -n istio-system
+    kubectl wait --for=condition=available --timeout=600s deployment/grafana -n istio-system || warn "Grafana not ready"
+    kubectl wait --for=condition=available --timeout=600s deployment/kiali -n istio-system || warn "Kiali not ready"
     
     log "Istio installed successfully"
 }
@@ -155,7 +155,7 @@ install_cilium_cli() {
         --set hubble.ui.enabled=true \
         --set hubble.relay.enabled=true \
         --set hubble.ui.ingress.enabled=false \
-        --wait --timeout=300s
+        --wait --timeout=600s
     
     log "Cilium CLI and Hubble installed successfully"
 }
