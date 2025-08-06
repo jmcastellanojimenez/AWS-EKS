@@ -172,33 +172,6 @@ resource "aws_security_group_rule" "cluster_ingress_node_https" {
   security_group_id        = aws_security_group.cluster.id
 }
 
-resource "aws_launch_template" "node_group" {
-  name_prefix = "${var.cluster_name}-node-group-"
-
-  block_device_mappings {
-    device_name = "/dev/xvda"
-    ebs {
-      volume_size           = var.node_disk_size
-      volume_type           = "gp3"
-      encrypted             = true
-      delete_on_termination = true
-    }
-  }
-
-  vpc_security_group_ids = [aws_security_group.node_group.id]
-
-  tag_specifications {
-    resource_type = "instance"
-    tags = merge(local.common_tags, {
-      Name = "${var.cluster_name}-node"
-    })
-  }
-
-  # Note: EKS managed node groups handle bootstrapping automatically
-  # Custom user data is not needed and can cause MIME format errors
-
-  tags = local.common_tags
-}
 
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
@@ -210,10 +183,7 @@ resource "aws_eks_node_group" "main" {
   instance_types = var.instance_types
   ami_type       = var.ami_type
 
-  launch_template {
-    id      = aws_launch_template.node_group.id
-    version = aws_launch_template.node_group.latest_version
-  }
+  disk_size = var.node_disk_size
 
   scaling_config {
     desired_size = var.desired_capacity
