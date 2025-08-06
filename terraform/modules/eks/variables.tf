@@ -48,6 +48,7 @@ variable "node_group_role_arn" {
 variable "ebs_csi_driver_role_arn" {
   description = "ARN of the EBS CSI driver IAM role"
   type        = string
+  default     = null
 }
 
 variable "endpoint_private_access" {

@@ -72,7 +72,7 @@ module "eks" {
   private_subnet_ids      = module.vpc.private_subnet_ids
   cluster_role_arn        = module.iam.eks_cluster_role_arn
   node_group_role_arn     = module.iam.eks_node_group_role_arn
-  ebs_csi_driver_role_arn = module.iam_irsa.ebs_csi_driver_role_arn
+  # Note: EBS CSI driver will be added separately to avoid circular dependency
 
   # Cost-optimized settings for dev
   instance_types     = local.env_config.instance_types
@@ -115,6 +115,20 @@ module "iam_irsa" {
   oidc_provider_url = module.eks.oidc_provider_url
 
   depends_on = [module.eks]
+}
+
+# EBS CSI Driver Addon (applied after IRSA roles are created)
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name                = module.eks.cluster_name
+  addon_name                  = "aws-ebs-csi-driver"
+  addon_version               = local.addon_versions.ebs_csi_driver
+  service_account_role_arn    = module.iam_irsa.ebs_csi_driver_role_arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  tags = local.common_tags
+
+  depends_on = [module.eks, module.iam_irsa]
 }
 
 # S3 Bucket for storing cluster information and backups
