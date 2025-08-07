@@ -135,8 +135,10 @@ jobs:
           
           if [[ $cluster_count -gt 0 ]]; then
             echo "status=running" >> $GITHUB_OUTPUT
-            echo "cluster_names=$clusters" >> $GITHUB_OUTPUT
-            echo "Found $cluster_count active clusters"
+            # Get first cluster name for operations
+            first_cluster=$(echo "$clusters" | jq -r '.[0]')
+            echo "first_cluster_name=$first_cluster" >> $GITHUB_OUTPUT
+            echo "Found $cluster_count active clusters: $first_cluster"
           else
             echo "status=stopped" >> $GITHUB_OUTPUT
             echo "No active clusters found"
@@ -146,10 +148,9 @@ jobs:
         id: workload-check
         if: steps.cluster-check.outputs.status == 'running'
         run: |
-          clusters='${{ steps.cluster-check.outputs.cluster_names }}'
-          first_cluster=$(echo "$clusters" | jq -r '.[0]')
+          first_cluster='${{ steps.cluster-check.outputs.first_cluster_name }}'
           
-          if [[ "$first_cluster" != "null" ]]; then
+          if [[ "$first_cluster" != "" && "$first_cluster" != "null" ]]; then
             # Setup kubectl
             curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
             chmod +x kubectl && sudo mv kubectl /usr/local/bin/
