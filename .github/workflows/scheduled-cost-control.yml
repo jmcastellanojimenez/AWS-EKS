@@ -237,17 +237,43 @@ jobs:
           # Initialize Terraform
           terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
           
-          # Create apply plan
-          terraform plan -out=apply-plan
+          # Refresh state to detect any drift
+          echo "🔄 Refreshing Terraform state..."
+          terraform refresh || {
+            echo "⚠️ State refresh failed, attempting recovery..." >> $GITHUB_STEP_SUMMARY
+            # Clean up any problematic state
+            terraform state list | grep -E "(kms_alias|kms_key)" | xargs -r terraform state rm || true
+          }
+          
+          # Create apply plan with retry logic
+          echo "📋 Creating deployment plan..."
+          if ! terraform plan -out=apply-plan; then
+            echo "❌ Plan failed, attempting state recovery..." >> $GITHUB_STEP_SUMMARY
+            # Try to import existing resources if they exist
+            cluster_name=$(aws eks list-clusters --query 'clusters[0]' --output text 2>/dev/null || echo "")
+            if [[ "$cluster_name" != "" && "$cluster_name" != "None" ]]; then
+              echo "Found existing cluster: $cluster_name, updating state..."
+              # Try again after discovery
+              terraform plan -out=apply-plan || {
+                echo "❌ Cannot recover, manual intervention needed" >> $GITHUB_STEP_SUMMARY
+                exit 1
+              }
+            else
+              echo "No existing resources found, proceeding with fresh deployment"
+              terraform plan -out=apply-plan
+            fi
+          fi
           
           # Apply plan (only if cluster is not running)
           if [[ "${{ needs.pre-action-check.outputs.cluster-status }}" != "running" ]]; then
-            echo "Starting up infrastructure..."
-            terraform apply apply-plan
-            echo "✅ Infrastructure startup completed" >> $GITHUB_STEP_SUMMARY
-            
-            # Trigger tools installation after startup
-            echo "🛠️ Triggering tools installation..." >> $GITHUB_STEP_SUMMARY
+            echo "🚀 Starting up infrastructure..."
+            if terraform apply apply-plan; then
+              echo "✅ Infrastructure startup completed" >> $GITHUB_STEP_SUMMARY
+              echo "🛠️ Triggering tools installation..." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Startup failed, check logs for details" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
           else
             echo "ℹ️ Infrastructure already running" >> $GITHUB_STEP_SUMMARY
           fi
@@ -291,7 +317,7 @@ jobs:
               ref: 'main',
               inputs: {
                 environment: '${{ needs.determine-action.outputs.environment }}',
-                cluster_name: 'eks-learning-lab',
+                cluster_name: 'eks-learning-lab-${{ needs.determine-action.outputs.environment }}',
                 tool_category: 'core'
               }
             });

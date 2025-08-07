@@ -326,7 +326,7 @@ jobs:
               ref: 'main',
               inputs: {
                 environment: '${{ needs.validate-inputs.outputs.environment }}',
-                cluster_name: '${{ needs.terraform-operation.outputs.terraform-output }}'.split('\n')[0].split('=')[1] || 'eks-learning-lab'
+                cluster_name: 'eks-learning-lab-${{ needs.validate-inputs.outputs.environment }}'
               }
             });
 

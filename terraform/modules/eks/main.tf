@@ -19,6 +19,12 @@ resource "aws_eks_cluster" "main" {
   role_arn = var.cluster_role_arn
   version  = var.kubernetes_version
 
+  # Enable Access Entries authentication mode from the start
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   vpc_config {
     subnet_ids              = concat(var.public_subnet_ids, var.private_subnet_ids)
     endpoint_private_access = var.endpoint_private_access
@@ -71,8 +77,13 @@ resource "aws_iam_openid_connect_provider" "eks" {
 
 resource "aws_kms_key" "eks" {
   description             = "EKS Secret Encryption Key"
-  deletion_window_in_days = 7
+  deletion_window_in_days = 30  # Maximum to avoid conflicts
   enable_key_rotation     = true
+
+  # Prevent conflicts during destroy/recreate cycles
+  lifecycle {
+    prevent_destroy = false
+  }
 
   tags = local.common_tags
 }

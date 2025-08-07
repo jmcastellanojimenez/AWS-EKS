@@ -15,7 +15,7 @@ on:
       cluster_name:
         description: 'EKS Cluster Name'
         required: true
-        default: 'eks-learning-lab'
+        default: 'eks-learning-lab-dev'
         type: string
       tool_category:
         description: 'Tool Category to Install'
