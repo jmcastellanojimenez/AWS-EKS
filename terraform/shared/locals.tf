@@ -24,7 +24,7 @@ locals {
       desired_capacity     = 1
       min_capacity         = 1
       max_capacity         = 2
-      instance_types       = ["t3.small", "t3.medium"]
+      instance_types       = ["t3.medium"]
     }
     staging = {
       enable_nat_gateway   = true
@@ -34,7 +34,7 @@ locals {
       desired_capacity     = 2
       min_capacity         = 1
       max_capacity         = 3
-      instance_types       = ["t3.small", "t3.medium"]
+      instance_types       = ["t3.medium"]
     }
     prod = {
       enable_nat_gateway   = true

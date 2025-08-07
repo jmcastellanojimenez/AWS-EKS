@@ -147,10 +147,10 @@ jobs:
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 
-      - name: Install Minimal Tools
+      - name: Install Emergency Minimal Tools
         run: |
-          chmod +x scripts/install-minimal-tools.sh
-          ./scripts/install-minimal-tools.sh ${{ inputs.environment }}
+          chmod +x scripts/install-emergency-minimal.sh
+          ./scripts/install-emergency-minimal.sh ${{ inputs.environment }}
 
   install-gitops-tools:
     name: 🔄 Install GitOps Tools (DISABLED - Resource Constraints)
