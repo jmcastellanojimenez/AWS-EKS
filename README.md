@@ -8,7 +8,7 @@ A comprehensive, cost-optimized AWS EKS learning environment with production-gra
 
 ## 🎯 Overview
 
-This learning lab provides a complete EKS environment optimized for learning Kubernetes, DevOps practices, and cloud-native technologies while keeping costs ultra-low (~$45-50/month).
+This learning lab provides a complete EKS environment optimized for learning Kubernetes, DevOps practices, and cloud-native technologies while keeping costs ultra-low (~$110-130/month).
 
 ### 🌟 Key Features
 
@@ -117,15 +117,15 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 | Service | Cost | Optimization |
 |---------|------|--------------|
 | EKS Control Plane | $72.00 | Fixed cost |
-| EC2 Instances (Spot) | $7.30 | 70% savings vs On-Demand |
+| EC2 Instances (Spot) | $14.60 | 70% savings vs On-Demand |
 | EBS Storage (20GB) | $2.00 | GP3 volumes |
 | Data Transfer | $3.00 | Minimal cross-AZ |
-| **Total** | **~$84.30** | **$23.70 savings/month** |
+| **Total** | **~$91.60** | **$31.00 savings/month** |
 
 ### Additional Savings
 
 - **Scheduled Shutdown**: 50-65% compute savings
-- **Weekend Shutdown**: ~$7.80 savings per weekend
+- **Weekend Shutdown**: ~$10.80 savings per weekend
 - **No NAT Gateway**: $45/month savings in dev environment
 
 ### Cost Monitoring

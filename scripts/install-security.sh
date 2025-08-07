@@ -68,8 +68,8 @@ install_vault() {
     # Check if Vault is already installed and remove if needed
     if helm list -n vault | grep -q vault; then
         warn "Vault already exists, uninstalling first..."
-        helm uninstall vault -n vault --timeout=300s || true
-        kubectl delete namespace vault --timeout=60s || true
+        helm uninstall vault -n vault --timeout=600s || true
+        kubectl delete namespace vault --timeout=300s || true
         sleep 30
         kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
     fi
@@ -88,7 +88,7 @@ install_vault() {
         --set server.resources.limits.cpu=50m \
         --set server.ha.enabled=false \
         --set server.ha.raft.enabled=false \
-        --wait --timeout=300s; then
+        --wait --timeout=900s; then
         warn "Vault installation failed due to resource constraints, skipping..."
         return 0
     fi
@@ -288,7 +288,7 @@ install_falco() {
         --wait --timeout=900s
     
     # Wait for Falco to be ready
-    kubectl wait --for=condition=ready --timeout=300s pod -l app.kubernetes.io/name=falco -n falco
+    kubectl wait --for=condition=ready --timeout=600s pod -l app.kubernetes.io/name=falco -n falco
     
     log "Falco installed successfully"
 }

@@ -46,9 +46,9 @@ calculate_eks_costs() {
             # Development environment costs
             EKS_CLUSTER_HOURLY=0.10
             EC2_INSTANCES=1
-            INSTANCE_TYPE="t3.small"
-            INSTANCE_HOURLY_ONDEMAND=0.0208
-            INSTANCE_HOURLY_SPOT=0.0062  # ~70% savings
+            INSTANCE_TYPE="t3.medium"
+            INSTANCE_HOURLY_ONDEMAND=0.0416
+            INSTANCE_HOURLY_SPOT=0.0125  # ~70% savings
             EBS_STORAGE_GB=20
             NAT_GATEWAY=0  # Disabled for cost savings
             ;;
@@ -56,9 +56,9 @@ calculate_eks_costs() {
             # Staging environment costs
             EKS_CLUSTER_HOURLY=0.10
             EC2_INSTANCES=2
-            INSTANCE_TYPE="t3.small"
-            INSTANCE_HOURLY_ONDEMAND=0.0208
-            INSTANCE_HOURLY_SPOT=0.0062
+            INSTANCE_TYPE="t3.medium"
+            INSTANCE_HOURLY_ONDEMAND=0.0416
+            INSTANCE_HOURLY_SPOT=0.0125
             EBS_STORAGE_GB=40
             NAT_GATEWAY=1
             ;;
@@ -280,7 +280,7 @@ print_environment_comparison() {
     echo "┌─────────────┬──────────────┬──────────────┬──────────────┐"
     echo "│ Component   │ Development  │ Staging      │ Production   │"
     echo "├─────────────┼──────────────┼──────────────┼──────────────┤"
-    echo "│ Instances   │ 1 × t3.small │ 2 × t3.small │ 3 × t3.medium│"
+    echo "│ Instances   │ 1 × t3.medium │ 2 × t3.medium │ 3 × t3.medium│"
     echo "│ Capacity    │ Spot         │ Spot         │ On-Demand    │"
     echo "│ NAT Gateway │ No           │ Yes (1)      │ Yes (2)      │"
     echo "│ Storage     │ 20GB         │ 40GB         │ 60GB         │"

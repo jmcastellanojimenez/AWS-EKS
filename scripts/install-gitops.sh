@@ -68,8 +68,8 @@ install_argocd() {
     # Check if ArgoCD is already installed and remove if needed
     if helm list -n argocd | grep -q argocd; then
         warn "ArgoCD already exists, uninstalling first..."
-        helm uninstall argocd -n argocd --timeout=300s || true
-        kubectl delete namespace argocd --timeout=60s || true
+        helm uninstall argocd -n argocd --timeout=600s || true
+        kubectl delete namespace argocd --timeout=300s || true
         sleep 30
         kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
     fi
@@ -99,13 +99,13 @@ install_argocd() {
         --set controller.replicas=1 \
         --set server.replicas=1 \
         --set repoServer.replicas=1 \
-        --wait --timeout=300s; then
+        --wait --timeout=900s; then
         warn "ArgoCD installation failed due to resource constraints, skipping..."
         return 0
     fi
     
     # Wait for ArgoCD to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+    kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd
     
     # Create ArgoCD CLI config
     kubectl patch configmap argocd-cmd-params-cm -n argocd --patch='{"data":{"server.insecure":"true"}}'
@@ -316,7 +316,7 @@ install_sealed_secrets() {
         --set resources.requests.memory="64Mi" \
         --set resources.limits.cpu="100m" \
         --set resources.limits.memory="128Mi" \
-        --wait --timeout=600s
+        --wait --timeout=1200s
     
     # Install kubeseal CLI if not present
     if ! command -v kubeseal &> /dev/null; then

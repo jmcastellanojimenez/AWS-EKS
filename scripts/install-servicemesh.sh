@@ -149,9 +149,9 @@ install_istio() {
     kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.19/samples/addons/prometheus.yaml
     
     # Wait for Istio components to be ready - increased timeouts
-    kubectl wait --for=condition=available --timeout=600s deployment/istiod -n istio-system
-    kubectl wait --for=condition=available --timeout=600s deployment/grafana -n istio-system || warn "Grafana not ready"
-    kubectl wait --for=condition=available --timeout=600s deployment/kiali -n istio-system || warn "Kiali not ready"
+    kubectl wait --for=condition=available --timeout=900s deployment/istiod -n istio-system
+    kubectl wait --for=condition=available --timeout=900s deployment/grafana -n istio-system || warn "Grafana not ready"
+    kubectl wait --for=condition=available --timeout=900s deployment/kiali -n istio-system || warn "Kiali not ready"
     
     log "Istio installed successfully"
 }
@@ -228,7 +228,7 @@ install_cilium_cli() {
         --set hubble.ui.enabled=true \
         --set hubble.relay.enabled=true \
         --set hubble.ui.ingress.enabled=false \
-        --wait --timeout=600s
+        --wait --timeout=1200s
     
     log "Cilium CLI and Hubble installed successfully"
 }

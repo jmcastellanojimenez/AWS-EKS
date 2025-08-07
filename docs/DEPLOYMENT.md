@@ -270,14 +270,14 @@ Edit `terraform/environments/{env}/terraform.tfvars`:
 
 ```hcl
 # Development overrides
-instance_types = ["t3.small"]
+instance_types = ["t3.medium"]
 desired_capacity = 1
 min_capacity = 1
 max_capacity = 2
 enable_nat_gateway = false
 
 # Staging overrides  
-instance_types = ["t3.small", "t3.medium"]
+instance_types = ["t3.medium", "t3.large"]
 desired_capacity = 2
 min_capacity = 1
 max_capacity = 3

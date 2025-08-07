@@ -264,7 +264,7 @@ jobs:
             fi
           fi
           
-          # Apply plan (only if cluster is not running)
+          # Apply plan (both for startup and infrastructure updates)
           if [[ "${{ needs.pre-action-check.outputs.cluster-status }}" != "running" ]]; then
             echo "🚀 Starting up infrastructure..."
             if terraform apply apply-plan; then
@@ -275,7 +275,15 @@ jobs:
               exit 1
             fi
           else
-            echo "ℹ️ Infrastructure already running" >> $GITHUB_STEP_SUMMARY
+            echo "🔄 Infrastructure already running, checking for updates..."
+            # Apply any infrastructure changes (like instance type upgrades)
+            if terraform apply apply-plan; then
+              echo "✅ Infrastructure updates applied" >> $GITHUB_STEP_SUMMARY
+              echo "🔄 Node group will be updated with new configuration" >> $GITHUB_STEP_SUMMARY
+              echo "🛠️ Triggering tools installation..." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "ℹ️ No infrastructure changes needed" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
 
       - name: Status Check Action
@@ -344,11 +352,11 @@ jobs:
           if [[ "$action" == "shutdown" ]]; then
             echo "### 💡 Expected Savings" >> $GITHUB_STEP_SUMMARY
             echo "- **EKS Cluster**: ~\$2.40/day saved" >> $GITHUB_STEP_SUMMARY
-            echo "- **EC2 Nodes**: ~\$1.50/day saved (t3.small spots)" >> $GITHUB_STEP_SUMMARY
-            echo "- **Total Daily Savings**: ~\$3.90" >> $GITHUB_STEP_SUMMARY
+            echo "- **EC2 Nodes**: ~\$3.00/day saved (t3.medium spots)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Total Daily Savings**: ~\$5.40" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Weekend Shutdown Savings**: ~\$7.80 (2 days)" >> $GITHUB_STEP_SUMMARY
-            echo "**Nightly Shutdown Savings**: ~\$1.95 (10 hours)" >> $GITHUB_STEP_SUMMARY
+            echo "**Weekend Shutdown Savings**: ~\$10.80 (2 days)" >> $GITHUB_STEP_SUMMARY
+            echo "**Nightly Shutdown Savings**: ~\$2.25 (10 hours)" >> $GITHUB_STEP_SUMMARY
           elif [[ "$action" == "startup" ]]; then
             echo "### 🔄 Infrastructure Resumed" >> $GITHUB_STEP_SUMMARY
             echo "- Cluster available for learning and development" >> $GITHUB_STEP_SUMMARY

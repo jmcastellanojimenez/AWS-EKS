@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Emergency Ultra-Minimal Installation
-# For extremely resource-constrained clusters (t3.small with 11 pod limit)
+# For extremely resource-constrained clusters (originally designed for t3.small)
 
 ENVIRONMENT=${1:-dev}
 
@@ -35,7 +35,7 @@ emergency_check() {
         error "The cluster is running $current_pods pods on nodes that can only handle $available_pods"
         
         log "📋 Diagnosis:"
-        log "  • t3.small nodes have severe pod limits"
+        log "  • t3.small nodes had severe pod limits (now using t3.medium)"
         log "  • Core AWS tools + Kubernetes system pods = ~35-40 pods"
         log "  • Node capacity is only 11 pods per node"
         log "  • This is why Helm installations timeout/fail"
@@ -44,7 +44,7 @@ emergency_check() {
         log "  1. Use t3.medium nodes (50+ pod capacity)" 
         log "  2. Reduce number of nodes to 1"
         log "  3. Remove some system components"
-        log "  4. This is a known EKS + t3.small limitation"
+        log "  4. This was a known EKS + t3.small limitation (fixed with t3.medium)"
         
         warn "Proceeding with emergency mode - will not install anything new"
         warn "Focus will be on providing cluster information only"
@@ -86,7 +86,7 @@ data:
         
         <div class="card">
             <h2 class="error">❌ Critical Issue Detected</h2>
-            <p><strong>Problem:</strong> t3.small nodes are severely undersized for EKS</p>
+            <p><strong>Problem:</strong> Current nodes may be undersized for EKS workload</p>
             <p><strong>Pod Capacity:</strong> $available_pods per node</p>
             <p><strong>Current Usage:</strong> $current_pods pods (over capacity!)</p>
             <p><strong>Usage Percentage:</strong> $((current_pods * 100 / available_pods))%</p>
@@ -94,7 +94,7 @@ data:
         
         <div class="card">
             <h2 class="warn">📊 Resource Breakdown</h2>
-            <p>Typical EKS pod usage on t3.small:</p>
+            <p>Typical EKS pod usage on current nodes:</p>
             <ul>
                 <li>kube-system pods: ~15-20</li>
                 <li>AWS Load Balancer Controller: ~3</li>
@@ -103,7 +103,7 @@ data:
                 <li>Container Insights: ~5</li>
                 <li>Your applications: ???</li>
                 <li><strong>Total needed: 35-40+ pods</strong></li>
-                <li><strong>t3.small capacity: 11 pods per node</strong></li>
+                <li><strong>Current capacity: Check node type</strong></li>
             </ul>
         </div>
         
@@ -128,7 +128,7 @@ max_size = 1</pre>
             <p>To fix this cluster:</p>
             <pre>
 # 1. Update terraform/modules/eks/main.tf:
-   instance_types = ["t3.medium"]  # Change from t3.small
+   instance_types = ["t3.medium"]  # Should already be t3.medium
 
 # 2. Or reduce nodes:
    min_size         = 1
@@ -143,7 +143,7 @@ max_size = 1</pre>
         
         <div class="card">
             <h2>💰 Cost Impact</h2>
-            <p><strong>t3.small (current):</strong> ~$20/month for 2 nodes</p>
+            <p><strong>t3.medium (current):</strong> ~$40/month for 2 nodes</p>
             <p><strong>t3.medium:</strong> ~$40/month for 2 nodes</p>
             <p><strong>Savings:</strong> Still way cheaper than on-demand!</p>
         </div>

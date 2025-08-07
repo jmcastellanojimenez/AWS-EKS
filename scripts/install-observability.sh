@@ -68,8 +68,8 @@ install_prometheus_stack() {
     # Check if Prometheus is already installed and remove if needed
     if helm list -n monitoring | grep -q prometheus; then
         warn "Prometheus already exists, uninstalling first..."
-        helm uninstall prometheus -n monitoring --timeout=300s || true
-        kubectl delete namespace monitoring --timeout=60s || true
+        helm uninstall prometheus -n monitoring --timeout=600s || true
+        kubectl delete namespace monitoring --timeout=300s || true
         sleep 30
         kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
     fi
@@ -96,7 +96,7 @@ install_prometheus_stack() {
         --set prometheusOperator.resources.limits.memory=128Mi \
         --set nodeExporter.enabled=false \
         --set kubeStateMetrics.enabled=false \
-        --wait --timeout=300s; then
+        --wait --timeout=900s; then
         warn "Prometheus installation failed due to resource constraints, skipping..."
         return 0
     fi
@@ -113,7 +113,7 @@ install_jaeger() {
     log "Installing Jaeger..."
     
     # Clean up any existing Jaeger resources
-    kubectl delete namespace tracing --timeout=60s || true
+    kubectl delete namespace tracing --timeout=300s || true
     sleep 10
     
     # Add Jaeger Helm repository

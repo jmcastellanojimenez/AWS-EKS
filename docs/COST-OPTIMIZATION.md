@@ -21,7 +21,7 @@ The EKS Learning Lab is designed with cost optimization as a primary concern, ta
 | Service | Configuration | Cost | Optimization |
 |---------|---------------|------|--------------|
 | **EKS Control Plane** | 1 cluster | $72.00 | Fixed AWS cost |
-| **EC2 Instances** | 1 × t3.small (Spot) | $7.30 | 70% vs On-Demand |
+| **EC2 Instances** | 1 × t3.medium (Spot) | $14.60 | 70% vs On-Demand |
 | **EBS Storage** | 20GB GP3 | $2.00 | 20% cheaper than GP2 |
 | **Application Load Balancer** | 1 ALB | $16.20 | Shared across apps |
 | **Data Transfer** | Inter-AZ | $3.00 | Minimal cross-AZ traffic |
@@ -34,8 +34,8 @@ The EKS Learning Lab is designed with cost optimization as a primary concern, ta
 
 | Environment | Instances | Storage | NAT | Monthly Cost |
 |-------------|-----------|---------|-----|--------------|
-| **Development** | 1 × t3.small (Spot) | 20GB | No | **$103.50** |
-| **Staging** | 2 × t3.small (Spot) | 40GB | Yes | **$158.90** |
+| **Development** | 1 × t3.medium (Spot) | 20GB | No | **$110.80** |
+| **Staging** | 2 × t3.medium (Spot) | 40GB | Yes | **$173.50** |
 | **Production** | 3 × t3.medium (On-Demand) | 60GB | Yes × 2 | **$267.40** |
 
 ## 🚀 Optimization Strategies
@@ -74,7 +74,7 @@ Annual Savings: ~$900-1000
 ```hcl
 # Terraform configuration
 capacity_type = "SPOT"
-instance_types = ["t3.small", "t3.medium"]  # Multiple types for availability
+instance_types = ["t3.medium", "t3.large"]  # Multiple types for availability
 
 # Savings: 60-70% vs On-Demand
 # Risk: Occasional interruption (acceptable for learning)
@@ -83,7 +83,7 @@ instance_types = ["t3.small", "t3.medium"]  # Multiple types for availability
 #### Right-Sizing Guidelines
 ```hcl
 # Development
-instance_types = ["t3.small"]          # 2 vCPU, 2GB RAM
+instance_types = ["t3.medium"]         # 2 vCPU, 4GB RAM
 desired_capacity = 1
 max_capacity = 2
 
@@ -375,7 +375,7 @@ groups:
 ```hcl
 # Increase Spot availability with multiple instance types
 instance_types = [
-  "t3.small",
+  "t3.medium",
   "t3a.small",    # AMD instances (often cheaper)
   "t2.small"      # Previous generation fallback
 ]

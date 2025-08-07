@@ -48,7 +48,7 @@ install_minimal_monitoring() {
     # Metrics Server (if not already installed by core tools)
     if ! kubectl get deployment metrics-server -n kube-system &>/dev/null; then
         kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-        kubectl wait --for=condition=available --timeout=180s deployment/metrics-server -n kube-system || warn "Metrics server not ready"
+        kubectl wait --for=condition=available --timeout=600s deployment/metrics-server -n kube-system || warn "Metrics server not ready"
     fi
     
     log "Basic monitoring installed"
@@ -62,7 +62,7 @@ install_minimal_ingress() {
     
     # Wait briefly
     sleep 30
-    kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=180s || warn "NGINX ingress not ready"
+    kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=600s || warn "NGINX ingress not ready"
     
     log "Minimal ingress installed"
 }
@@ -158,7 +158,7 @@ data:
             <h2 class="header">📊 Quick Stats</h2>
             <div id="stats">
                 <p>• <span class="status-ok">✓</span> Cluster: Running</p>
-                <p>• <span class="status-ok">✓</span> Nodes: 2 (t3.small spot)</p>
+                <p>• <span class="status-ok">✓</span> Nodes: 2 (t3.medium spot)</p>
                 <p>• <span class="status-warn">⚠</span> Resources: Limited (Learning optimized)</p>
             </div>
         </div>

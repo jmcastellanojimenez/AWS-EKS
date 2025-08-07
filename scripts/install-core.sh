@@ -89,7 +89,7 @@ install_aws_load_balancer_controller() {
         --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::${ACCOUNT_ID}:role/eks-learning-lab-${ENVIRONMENT}-aws-load-balancer-controller" \
         --set region="$REGION" \
         --set vpcId=$(kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' | cut -d'/' -f4 | xargs aws ec2 describe-instances --instance-ids --query 'Reservations[0].Instances[0].VpcId' --output text) \
-        --wait --timeout=300s
+        --wait --timeout=900s
     
     log "AWS Load Balancer Controller installed successfully"
 }
@@ -183,7 +183,7 @@ install_metrics_server() {
     kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
     
     # Wait for metrics server to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/metrics-server -n kube-system
+    kubectl wait --for=condition=available --timeout=600s deployment/metrics-server -n kube-system
     
     log "Metrics Server installed successfully"
 }
