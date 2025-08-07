@@ -120,11 +120,43 @@ jobs:
           chmod +x scripts/install-core.sh
           ./scripts/install-core.sh ${{ inputs.environment }}
 
-  install-gitops-tools:
-    name: 🔄 Install GitOps Tools
+  install-minimal-tools:
+    name: 🛠️ Install Minimal Tools  
     runs-on: ubuntu-latest
     needs: [prepare-environment, install-core-tools]
-    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'gitops')
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && inputs.tool_category == 'all'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-MinimalTools
+
+      - name: Download Kubeconfig
+        uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-tools
+          path: /tmp/
+
+      - name: Setup Tools
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+      - name: Install Minimal Tools
+        run: |
+          chmod +x scripts/install-minimal-tools.sh
+          ./scripts/install-minimal-tools.sh ${{ inputs.environment }}
+
+  install-gitops-tools:
+    name: 🔄 Install GitOps Tools (DISABLED - Resource Constraints)
+    runs-on: ubuntu-latest
+    needs: [prepare-environment, install-core-tools]
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && inputs.tool_category == 'gitops'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -154,10 +186,10 @@ jobs:
           ./scripts/install-gitops.sh ${{ inputs.environment }}
 
   install-servicemesh:
-    name: 🕸️ Install Service Mesh
+    name: 🕸️ Install Service Mesh (DISABLED - Resource Constraints)
     runs-on: ubuntu-latest
     needs: [prepare-environment, install-core-tools]
-    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'servicemesh')
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && inputs.tool_category == 'servicemesh'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -187,10 +219,10 @@ jobs:
           ./scripts/install-servicemesh.sh ${{ inputs.environment }}
 
   install-security-tools:
-    name: 🔒 Install Security Tools
+    name: 🔒 Install Security Tools (DISABLED - Resource Constraints)
     runs-on: ubuntu-latest
     needs: [prepare-environment, install-core-tools]
-    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'security')
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && inputs.tool_category == 'security'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -220,10 +252,10 @@ jobs:
           ./scripts/install-security.sh ${{ inputs.environment }}
 
   install-observability:
-    name: 📊 Install Observability Tools
+    name: 📊 Install Observability Tools (DISABLED - Resource Constraints)
     runs-on: ubuntu-latest
     needs: [prepare-environment, install-core-tools]
-    if: needs.prepare-environment.outputs.cluster-status == 'ready' && (inputs.tool_category == 'all' || inputs.tool_category == 'observability')
+    if: needs.prepare-environment.outputs.cluster-status == 'ready' && inputs.tool_category == 'observability'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -255,7 +287,7 @@ jobs:
   verify-installation:
     name: ✅ Verify Installation
     runs-on: ubuntu-latest
-    needs: [install-core-tools, install-gitops-tools, install-servicemesh, install-security-tools, install-observability]
+    needs: [install-core-tools, install-minimal-tools]
     if: always()
     steps:
       - name: Checkout Code

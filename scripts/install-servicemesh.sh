@@ -54,7 +54,66 @@ check_prerequisites() {
     log "Prerequisites check passed"
 }
 
-# Install Istio
+# Install minimal Istio (lightweight)
+install_lightweight_istio() {
+    log "Attempting minimal Istio installation..."
+    
+    # Download and install Istio CLI if needed
+    if ! command -v istioctl &> /dev/null; then
+        log "Downloading Istio CLI..."
+        curl -L https://istio.io/downloadIstio | ISTIO_VERSION=1.19.3 sh -
+        sudo mv istio-*/bin/istioctl /usr/local/bin/
+        rm -rf istio-*
+    fi
+    
+    # Try minimal Istio installation
+    if timeout 300 istioctl install \
+        --set values.pilot.resources.requests.cpu=25m \
+        --set values.pilot.resources.requests.memory=32Mi \
+        --set values.pilot.resources.limits.cpu=100m \
+        --set values.pilot.resources.limits.memory=128Mi \
+        --set values.pilot.env.EXTERNAL_ISTIOD=false \
+        --set values.gateways.istio-ingressgateway.enabled=false \
+        --set values.gateways.istio-egressgateway.enabled=false \
+        --readiness-timeout=5m -y; then
+        log "Minimal Istio installed successfully"
+        return 0
+    else
+        warn "Minimal Istio installation failed"
+        return 1
+    fi
+}
+
+# Install minimal Linkerd (lightweight)
+install_lightweight_linkerd() {
+    log "Attempting minimal Linkerd installation..."
+    
+    # Download Linkerd CLI if needed
+    if ! command -v linkerd &> /dev/null; then
+        log "Downloading Linkerd CLI..."
+        curl -sL https://run.linkerd.io/install-edge | sh
+        sudo mv ~/.linkerd2/bin/linkerd /usr/local/bin/
+    fi
+    
+    # Install Gateway API CRDs (required)
+    kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml || true
+    
+    # Try minimal Linkerd installation
+    if linkerd install --crds | kubectl apply -f - && \
+       linkerd install \
+         --proxy-cpu-request=5m \
+         --proxy-memory-request=8Mi \
+         --proxy-cpu-limit=50m \
+         --proxy-memory-limit=64Mi | kubectl apply -f -; then
+        log "Minimal Linkerd installed successfully"
+        return 0
+    else
+        warn "Minimal Linkerd installation failed"
+        return 1
+    fi
+}
+
+# Legacy Istio function (kept for compatibility)
 install_istio() {
     log "Installing Istio..."
     
@@ -404,12 +463,30 @@ main() {
     log "Starting service mesh installation for environment: $ENVIRONMENT"
     
     check_prerequisites
-    install_istio
-    install_linkerd
-    install_cilium_cli
-    install_osm
-    deploy_sample_apps
-    create_network_policies
+    
+    # Check available resources first
+    available_pods=$(kubectl get nodes -o jsonpath='{.items[0].status.allocatable.pods}')
+    current_pods=$(kubectl get pods --all-namespaces --no-headers | wc -l)
+    log "Current pods: $current_pods, Node capacity: $available_pods"
+    
+    if [ "$current_pods" -gt $((available_pods - 10)) ]; then
+        warn "Cluster is near pod capacity ($current_pods/$available_pods). Skipping service mesh installation."
+        warn "Consider using larger nodes (t3.medium) for service mesh features."
+        return 0
+    fi
+    
+    # Try only one lightweight service mesh
+    if ! install_lightweight_istio; then
+        warn "Istio failed, trying Linkerd..."
+        if ! install_lightweight_linkerd; then
+            warn "Both Istio and Linkerd failed due to resource constraints"
+            log "Service mesh installation skipped - cluster needs more resources"
+            return 0
+        fi
+    fi
+    
+    # Skip heavy components
+    log "Skipping OSM, Cilium, and sample apps due to resource constraints"
     
     if verify_installations; then
         print_summary
