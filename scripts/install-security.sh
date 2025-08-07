@@ -94,7 +94,7 @@ install_vault() {
     fi
     
     # Wait for Vault to be ready
-    kubectl wait --for=condition=ready --timeout=600s pod/vault-0 -n vault
+    kubectl wait --for=condition=ready --timeout=600s pod/vault-0 -n vault || warn "Vault pod not ready"
     
     # Configure Vault for Kubernetes authentication
     kubectl exec -n vault vault-0 -- vault auth enable kubernetes

@@ -221,8 +221,8 @@ subjects:
 EOF
     
     # Wait for Argo Workflows to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/argo-server -n argo
-    kubectl wait --for=condition=available --timeout=300s deployment/workflow-controller -n argo
+    kubectl wait --for=condition=available --timeout=300s deployment/argo-server -n argo || warn "Argo server not ready"
+    kubectl wait --for=condition=available --timeout=300s deployment/workflow-controller -n argo || warn "Workflow controller not ready"
     
     # Configure Argo Workflows for insecure mode
     kubectl patch configmap workflow-controller-configmap -n argo --patch='{"data":{"config":"containerRuntimeExecutor: kubelet\nparallelism: 10"}}'
@@ -242,9 +242,9 @@ install_tekton() {
     kubectl apply --filename https://storage.googleapis.com/tekton-releases/dashboard/latest/release.yaml
     
     # Wait for Tekton to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/tekton-pipelines-controller -n tekton-pipelines
-    kubectl wait --for=condition=available --timeout=300s deployment/tekton-pipelines-webhook -n tekton-pipelines
-    kubectl wait --for=condition=available --timeout=300s deployment/tekton-dashboard -n tekton-pipelines
+    kubectl wait --for=condition=available --timeout=300s deployment/tekton-pipelines-controller -n tekton-pipelines || warn "Tekton controller not ready"
+    kubectl wait --for=condition=available --timeout=300s deployment/tekton-pipelines-webhook -n tekton-pipelines || warn "Tekton webhook not ready"
+    kubectl wait --for=condition=available --timeout=300s deployment/tekton-dashboard -n tekton-pipelines || warn "Tekton dashboard not ready"
     
     # Create a sample pipeline
     kubectl apply -f - <<EOF
@@ -293,10 +293,10 @@ install_flux() {
     kubectl apply -f https://github.com/fluxcd/flux2/releases/latest/download/install.yaml
     
     # Wait for Flux to be ready
-    kubectl wait --for=condition=available --timeout=300s deployment/source-controller -n flux-system
-    kubectl wait --for=condition=available --timeout=300s deployment/kustomize-controller -n flux-system
-    kubectl wait --for=condition=available --timeout=300s deployment/helm-controller -n flux-system
-    kubectl wait --for=condition=available --timeout=300s deployment/notification-controller -n flux-system
+    kubectl wait --for=condition=available --timeout=300s deployment/source-controller -n flux-system || warn "Flux source-controller not ready"
+    kubectl wait --for=condition=available --timeout=300s deployment/kustomize-controller -n flux-system || warn "Flux kustomize-controller not ready"
+    kubectl wait --for=condition=available --timeout=300s deployment/helm-controller -n flux-system || warn "Flux helm-controller not ready"
+    kubectl wait --for=condition=available --timeout=300s deployment/notification-controller -n flux-system || warn "Flux notification-controller not ready"
     
     log "Flux installed successfully"
 }

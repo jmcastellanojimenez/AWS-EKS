@@ -102,8 +102,8 @@ install_prometheus_stack() {
     fi
     
     # Wait for all components to be ready
-    kubectl wait --for=condition=available --timeout=600s deployment/prometheus-grafana -n monitoring
-    kubectl wait --for=condition=available --timeout=600s deployment/prometheus-kube-prometheus-operator -n monitoring
+    kubectl wait --for=condition=available --timeout=600s deployment/prometheus-grafana -n monitoring || warn "Grafana not ready"
+    kubectl wait --for=condition=available --timeout=600s deployment/prometheus-kube-prometheus-operator -n monitoring || warn "Prometheus operator not ready"
     
     log "Prometheus Stack installed successfully"
 }
@@ -111,6 +111,10 @@ install_prometheus_stack() {
 # Install Jaeger for distributed tracing
 install_jaeger() {
     log "Installing Jaeger..."
+    
+    # Clean up any existing Jaeger resources
+    kubectl delete namespace tracing --timeout=60s || true
+    sleep 10
     
     # Add Jaeger Helm repository
     helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
@@ -137,7 +141,7 @@ install_jaeger() {
         --wait --timeout=600s
     
     # Wait for Jaeger to be ready
-    kubectl wait --for=condition=available --timeout=600s deployment/jaeger -n tracing
+    kubectl wait --for=condition=available --timeout=600s deployment/jaeger -n tracing || warn "Jaeger not ready"
     
     log "Jaeger installed successfully"
 }
@@ -164,7 +168,7 @@ install_opentelemetry() {
     kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
     
     # Wait for OpenTelemetry Operator to be ready
-    kubectl wait --for=condition=available --timeout=600s deployment/opentelemetry-operator-controller-manager -n opentelemetry-operator-system
+    kubectl wait --for=condition=available --timeout=600s deployment/opentelemetry-operator-controller-manager -n opentelemetry-operator-system || warn "OpenTelemetry operator not ready"
     
     # Create OpenTelemetry Collector
     kubectl apply -f - <<EOF

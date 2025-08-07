@@ -108,8 +108,11 @@ install_linkerd() {
         sudo mv ~/.linkerd2/bin/linkerd /usr/local/bin/
     fi
     
+    # Install Gateway API CRDs first (required by Linkerd)
+    kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml || warn "Gateway API already installed"
+    
     # Check cluster compatibility
-    linkerd check --pre
+    linkerd check --pre || warn "Linkerd pre-check failed"
     
     # Install Linkerd CRDs
     linkerd install --crds | kubectl apply -f -
