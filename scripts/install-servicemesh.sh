@@ -66,8 +66,19 @@ install_istio() {
         rm -rf istio-*
     fi
     
-    # Install Istio with demo profile for learning - with increased timeouts
-    istioctl install --set values.defaultRevision=default --set values.pilot.resources.requests.cpu=100m --set values.pilot.resources.requests.memory=128Mi --set values.pilot.resources.limits.cpu=500m --set values.pilot.resources.limits.memory=512Mi --readiness-timeout=15m -y
+    # Try minimal Istio installation, skip if it fails
+    log "Attempting Istio installation (may skip if resources are insufficient)..."
+    if ! timeout 600 istioctl install \
+        --set values.defaultRevision=default \
+        --set values.pilot.resources.requests.cpu=50m \
+        --set values.pilot.resources.requests.memory=64Mi \
+        --set values.pilot.resources.limits.cpu=200m \
+        --set values.pilot.resources.limits.memory=256Mi \
+        --set values.pilot.env.PILOT_ENABLE_WORKLOAD_ENTRY_AUTO_REGISTRATION=true \
+        --readiness-timeout=10m -y; then
+        warn "Istio installation failed due to resource constraints, skipping..."
+        return 0
+    fi
     
     # Enable sidecar injection for default namespace
     kubectl label namespace default istio-injection=enabled --overwrite

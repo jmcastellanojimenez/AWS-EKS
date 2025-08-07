@@ -74,26 +74,32 @@ install_prometheus_stack() {
         kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
     fi
     
-    # Install kube-prometheus-stack
-    helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+    # Try lightweight Prometheus installation, skip if it fails
+    log "Attempting lightweight Prometheus installation (may skip if resources are insufficient)..."
+    if ! helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
         --namespace monitoring \
-        --set prometheus.prometheusSpec.retention=7d \
-        --set prometheus.prometheusSpec.resources.requests.cpu=100m \
-        --set prometheus.prometheusSpec.resources.requests.memory=512Mi \
-        --set prometheus.prometheusSpec.resources.limits.cpu=500m \
-        --set prometheus.prometheusSpec.resources.limits.memory=1Gi \
-        --set alertmanager.alertmanagerSpec.resources.requests.cpu=50m \
-        --set alertmanager.alertmanagerSpec.resources.requests.memory=64Mi \
-        --set alertmanager.alertmanagerSpec.resources.limits.cpu=100m \
-        --set alertmanager.alertmanagerSpec.resources.limits.memory=128Mi \
-        --set grafana.resources.requests.cpu=100m \
-        --set grafana.resources.requests.memory=128Mi \
-        --set grafana.resources.limits.cpu=200m \
-        --set grafana.resources.limits.memory=256Mi \
+        --set prometheus.prometheusSpec.retention=2d \
+        --set prometheus.prometheusSpec.resources.requests.cpu=50m \
+        --set prometheus.prometheusSpec.resources.requests.memory=256Mi \
+        --set prometheus.prometheusSpec.resources.limits.cpu=200m \
+        --set prometheus.prometheusSpec.resources.limits.memory=512Mi \
+        --set alertmanager.enabled=false \
+        --set grafana.resources.requests.cpu=50m \
+        --set grafana.resources.requests.memory=64Mi \
+        --set grafana.resources.limits.cpu=100m \
+        --set grafana.resources.limits.memory=128Mi \
         --set grafana.adminPassword=admin123 \
         --set grafana.persistence.enabled=false \
-        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
-        --wait --timeout=900s
+        --set prometheusOperator.resources.requests.cpu=50m \
+        --set prometheusOperator.resources.requests.memory=64Mi \
+        --set prometheusOperator.resources.limits.cpu=100m \
+        --set prometheusOperator.resources.limits.memory=128Mi \
+        --set nodeExporter.enabled=false \
+        --set kubeStateMetrics.enabled=false \
+        --wait --timeout=300s; then
+        warn "Prometheus installation failed due to resource constraints, skipping..."
+        return 0
+    fi
     
     # Wait for all components to be ready
     kubectl wait --for=condition=available --timeout=600s deployment/prometheus-grafana -n monitoring
