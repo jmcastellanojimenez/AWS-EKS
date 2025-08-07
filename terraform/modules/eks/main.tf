@@ -217,9 +217,21 @@ resource "aws_eks_node_group" "main" {
     }
   }
 
+  # Tags for the node group resource itself
   tags = merge(local.common_tags, {
     Name = "${var.cluster_name}-node-group"
   })
+
+  # Tags that will be applied to EC2 instances
+  launch_template {
+    name    = aws_launch_template.node_group.name
+    version = aws_launch_template.node_group.latest_version
+  }
+
+  # Tag EC2 instances created by this node group
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
+  }
 
   depends_on = [
     aws_eks_cluster.main,
@@ -288,3 +300,31 @@ resource "aws_eks_addon" "ebs_csi_driver" {
 }
 
 data "aws_region" "current" {}
+
+# Launch template for EC2 instance tagging
+resource "aws_launch_template" "node_group" {
+  name_prefix = "${var.cluster_name}-node-"
+  
+  tag_specifications {
+    resource_type = "instance"
+    tags = merge(local.common_tags, {
+      Name = "${var.cluster_name}-node"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(local.common_tags, {
+      Name = "${var.cluster_name}-node-volume"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "network-interface"
+    tags = merge(local.common_tags, {
+      Name = "${var.cluster_name}-node-eni"
+    })
+  }
+
+  tags = local.common_tags
+}
