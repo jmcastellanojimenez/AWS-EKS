@@ -78,7 +78,7 @@ resource "aws_kms_key" "eks" {
 }
 
 resource "aws_kms_alias" "eks" {
-  name          = "alias/${var.project_name}-${var.environment}-eks-v2"
+  name          = "alias/${var.project_name}-${var.environment}-eks-${formatdate("YYYY-MM-DD", timestamp())}"
   target_key_id = aws_kms_key.eks.key_id
 }
 

@@ -65,6 +65,15 @@ install_prometheus_stack() {
     # Create monitoring namespace
     kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
     
+    # Check if Prometheus is already installed and remove if needed
+    if helm list -n monitoring | grep -q prometheus; then
+        warn "Prometheus already exists, uninstalling first..."
+        helm uninstall prometheus -n monitoring --timeout=300s || true
+        kubectl delete namespace monitoring --timeout=60s || true
+        sleep 30
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+    fi
+    
     # Install kube-prometheus-stack
     helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
         --namespace monitoring \

@@ -65,6 +65,15 @@ install_argocd() {
     helm repo add argo https://argoproj.github.io/argo-helm
     helm repo update
     
+    # Check if ArgoCD is already installed and remove if needed
+    if helm list -n argocd | grep -q argocd; then
+        warn "ArgoCD already exists, uninstalling first..."
+        helm uninstall argocd -n argocd --timeout=300s || true
+        kubectl delete namespace argocd --timeout=60s || true
+        sleep 30
+        kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+    fi
+    
     # Install ArgoCD with custom values
     helm upgrade --install argocd argo/argo-cd \
         --namespace argocd \

@@ -65,6 +65,15 @@ install_vault() {
     # Create namespace
     kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
     
+    # Check if Vault is already installed and remove if needed
+    if helm list -n vault | grep -q vault; then
+        warn "Vault already exists, uninstalling first..."
+        helm uninstall vault -n vault --timeout=300s || true
+        kubectl delete namespace vault --timeout=60s || true
+        sleep 30
+        kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+    fi
+    
     # Install Vault in development mode for learning
     helm upgrade --install vault hashicorp/vault \
         --namespace vault \
