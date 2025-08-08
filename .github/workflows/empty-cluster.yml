@@ -137,6 +137,7 @@ jobs:
       - name: Terraform Destroy
         if: needs.validate-inputs.outputs.action == 'destroy'
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        timeout-minutes: 30
         run: terraform apply tfplan
 
       - name: Get Terraform Outputs
