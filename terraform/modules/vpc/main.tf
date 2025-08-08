@@ -20,10 +20,6 @@ resource "aws_vpc" "main" {
     Name = "${var.project_name}-${var.environment}-vpc"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   })
-
-  timeouts {
-    delete = "15m"
-  }
 }
 
 resource "aws_internet_gateway" "main" {
@@ -186,6 +182,11 @@ resource "aws_vpc_endpoint" "ec2" {
     Name = "${var.project_name}-${var.environment}-ec2-endpoint"
   })
 
+  timeouts {
+    create = "10m"
+    delete = "10m"
+  }
+
   lifecycle {
     create_before_destroy = false
   }
@@ -206,6 +207,11 @@ resource "aws_vpc_endpoint" "eks" {
   tags = merge(local.common_tags, {
     Name = "${var.project_name}-${var.environment}-eks-endpoint"
   })
+
+  timeouts {
+    create = "10m"
+    delete = "10m"
+  }
 
   lifecycle {
     create_before_destroy = false

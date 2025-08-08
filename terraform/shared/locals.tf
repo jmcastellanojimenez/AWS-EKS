@@ -21,9 +21,9 @@ locals {
       enable_vpc_endpoints = false
       enable_flow_logs     = false
       capacity_type        = "SPOT"
-      desired_capacity     = 1
+      desired_capacity     = 2
       min_capacity         = 1
-      max_capacity         = 2
+      max_capacity         = 3
       instance_types       = ["t3.medium"]
     }
     staging = {
