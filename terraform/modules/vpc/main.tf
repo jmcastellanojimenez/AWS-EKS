@@ -20,21 +20,6 @@ resource "aws_vpc" "main" {
     Name = "${var.project_name}-${var.environment}-vpc"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   })
-
-  lifecycle {
-    prevent_destroy = false
-  }
-  
-  depends_on = [
-    aws_vpc_endpoint.s3,
-    aws_vpc_endpoint.ec2, 
-    aws_vpc_endpoint.eks,
-    aws_flow_log.vpc,
-    aws_route_table_association.public,
-    aws_route_table_association.private,
-    aws_nat_gateway.main,
-    aws_security_group.vpc_endpoints
-  ]
 }
 
 resource "aws_internet_gateway" "main" {
