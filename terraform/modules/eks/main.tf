@@ -194,8 +194,6 @@ resource "aws_eks_node_group" "main" {
   instance_types = var.instance_types
   ami_type       = var.ami_type
 
-  disk_size = var.node_disk_size
-
   scaling_config {
     desired_size = var.desired_capacity
     max_size     = var.max_capacity
@@ -305,6 +303,16 @@ data "aws_region" "current" {}
 resource "aws_launch_template" "node_group" {
   name_prefix = "${var.cluster_name}-node-"
   
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size = var.node_disk_size
+      volume_type = "gp3"
+      encrypted   = true
+      delete_on_termination = true
+    }
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags = merge(local.common_tags, {
