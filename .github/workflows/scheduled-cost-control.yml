@@ -193,6 +193,7 @@ jobs:
 
       - name: Execute Shutdown Action
         if: needs.determine-action.outputs.action == 'shutdown'
+        timeout-minutes: 45
         run: |
           environment="${{ needs.determine-action.outputs.environment }}"
           current_cost="${{ needs.pre-action-check.outputs.current-cost }}"
