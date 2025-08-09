@@ -108,3 +108,36 @@ resource "aws_iam_role_policy" "eks_node_group_ebs_policy" {
   })
 }
 
+# Additional policy for AWS Load Balancer Controller (fallback permissions)
+resource "aws_iam_role_policy" "eks_node_group_alb_policy" {
+  name = "${var.project_name}-${var.environment}-node-group-alb-policy"
+  role = aws_iam_role.eks_node_group.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "acm:ListCertificates",
+          "acm:DescribeCertificate",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeRules",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:CreateTargetGroup",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:RegisterTargets",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DeleteRule"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+

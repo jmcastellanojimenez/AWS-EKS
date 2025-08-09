@@ -121,6 +121,7 @@ jobs:
 
       - name: Security Scan with TFSec
         id: security-scan
+        if: needs.validate-inputs.outputs.action != 'destroy'
         run: |
           docker run --rm -v $(pwd):/src aquasec/tfsec /src/terraform --format json > tfsec-results.json || true
           
@@ -142,6 +143,12 @@ jobs:
             echo "✅ Security scan passed"
             echo "passed=true" >> $GITHUB_OUTPUT
           fi
+
+      - name: Skip Security Scan for Destroy
+        if: needs.validate-inputs.outputs.action == 'destroy'
+        run: |
+          echo "🗑️ Skipping security scan for destroy operation"
+          echo "passed=true" >> $GITHUB_OUTPUT
 
       - name: Cost Estimation
         id: cost-check
@@ -169,6 +176,7 @@ jobs:
           fi
 
       - name: Upload Security Results
+        if: needs.validate-inputs.outputs.action != 'destroy'
         uses: actions/upload-artifact@v4
         with:
           name: security-scan-results
