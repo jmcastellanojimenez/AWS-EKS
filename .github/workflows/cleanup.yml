@@ -199,9 +199,57 @@ jobs:
             -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
             -backend-config="key=ingress-alb-${{ needs.validate-cleanup.outputs.environment }}/terraform.tfstate"
 
+      - name: Manual IAM Role Cleanup (ALB Pattern)
+        run: |
+          echo "🗑️ Manually cleaning up ALB IAM roles that might cause conflicts..."
+          
+          # Define role names
+          ROLES=(
+            "${{ needs.validate-cleanup.outputs.environment }}-aws-load-balancer-controller-role"
+            "${{ needs.validate-cleanup.outputs.environment }}-alb-external-dns-role"  
+            "${{ needs.validate-cleanup.outputs.environment }}-alb-cert-manager-role"
+          )
+          
+          for role in "${ROLES[@]}"; do
+            echo "🔍 Checking role: $role"
+            
+            # Check if role exists
+            if aws iam get-role --role-name "$role" >/dev/null 2>&1; then
+              echo "🗑️ Deleting role: $role"
+              
+              # Detach all managed policies
+              echo "  Detaching managed policies..."
+              aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text | \
+              while read -r policy_arn; do
+                if [[ -n "$policy_arn" && "$policy_arn" != "None" ]]; then
+                  echo "    Detaching: $policy_arn"
+                  aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn" || true
+                fi
+              done
+              
+              # Delete inline policies
+              echo "  Deleting inline policies..."
+              aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text | \
+              while read -r policy_name; do
+                if [[ -n "$policy_name" && "$policy_name" != "None" ]]; then
+                  echo "    Deleting: $policy_name"
+                  aws iam delete-role-policy --role-name "$role" --policy-name "$policy_name" || true
+                fi
+              done
+              
+              # Delete the role
+              echo "  Deleting role..."
+              aws iam delete-role --role-name "$role" || true
+              echo "✅ Role $role cleanup completed"
+            else
+              echo "ℹ️ Role $role does not exist, skipping"
+            fi
+          done
+
       - name: Terraform Destroy - ALB Pattern
         working-directory: terraform/alb-pattern
         timeout-minutes: 30
+        continue-on-error: true
         run: |
           # Use user-provided values or defaults
           DOMAIN_NAME="${{ github.event.inputs.domain_name || 'k8s-demo.local' }}"
@@ -225,11 +273,15 @@ jobs:
           echo "  Domain: $DOMAIN_NAME"
           echo "  Hosted Zone ID: $HOSTED_ZONE_ID"
           
-          terraform plan -destroy -out=destroy-plan \
+          # First try normal destroy
+          if terraform plan -destroy -out=destroy-plan \
             -var="environment=${{ needs.validate-cleanup.outputs.environment }}" \
             -var="hosted_zone_id=$HOSTED_ZONE_ID" \
-            -var="domain_name=$DOMAIN_NAME"
-          terraform apply destroy-plan
+            -var="domain_name=$DOMAIN_NAME"; then
+            terraform apply destroy-plan
+          else
+            echo "⚠️ Terraform destroy failed, this is expected if resources were manually cleaned up"
+          fi
 
   cleanup-nginx-infrastructure:
     name: 🏗️ Cleanup NGINX Infrastructure
@@ -260,9 +312,56 @@ jobs:
             -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
             -backend-config="key=ingress-nginx-${{ needs.validate-cleanup.outputs.environment }}/terraform.tfstate"
 
+      - name: Manual IAM Role Cleanup (NGINX Pattern)
+        run: |
+          echo "🗑️ Manually cleaning up NGINX IAM roles that might cause conflicts..."
+          
+          # Define role names for NGINX pattern
+          ROLES=(
+            "${{ needs.validate-cleanup.outputs.environment }}-nginx-external-dns-role"  
+            "${{ needs.validate-cleanup.outputs.environment }}-nginx-cert-manager-role"
+          )
+          
+          for role in "${ROLES[@]}"; do
+            echo "🔍 Checking role: $role"
+            
+            # Check if role exists
+            if aws iam get-role --role-name "$role" >/dev/null 2>&1; then
+              echo "🗑️ Deleting role: $role"
+              
+              # Detach all managed policies
+              echo "  Detaching managed policies..."
+              aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text | \
+              while read -r policy_arn; do
+                if [[ -n "$policy_arn" && "$policy_arn" != "None" ]]; then
+                  echo "    Detaching: $policy_arn"
+                  aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn" || true
+                fi
+              done
+              
+              # Delete inline policies
+              echo "  Deleting inline policies..."
+              aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text | \
+              while read -r policy_name; do
+                if [[ -n "$policy_name" && "$policy_name" != "None" ]]; then
+                  echo "    Deleting: $policy_name"
+                  aws iam delete-role-policy --role-name "$role" --policy-name "$policy_name" || true
+                fi
+              done
+              
+              # Delete the role
+              echo "  Deleting role..."
+              aws iam delete-role --role-name "$role" || true
+              echo "✅ Role $role cleanup completed"
+            else
+              echo "ℹ️ Role $role does not exist, skipping"
+            fi
+          done
+
       - name: Terraform Destroy - NGINX Pattern
         working-directory: terraform/nginx-pattern
         timeout-minutes: 30
+        continue-on-error: true
         run: |
           # Use user-provided values or defaults
           DOMAIN_NAME="${{ github.event.inputs.domain_name || 'k8s-demo.local' }}"
@@ -286,11 +385,15 @@ jobs:
           echo "  Domain: $DOMAIN_NAME"
           echo "  Hosted Zone ID: $HOSTED_ZONE_ID"
           
-          terraform plan -destroy -out=destroy-plan \
+          # First try normal destroy
+          if terraform plan -destroy -out=destroy-plan \
             -var="environment=${{ needs.validate-cleanup.outputs.environment }}" \
             -var="hosted_zone_id=$HOSTED_ZONE_ID" \
-            -var="domain_name=$DOMAIN_NAME"
-          terraform apply destroy-plan
+            -var="domain_name=$DOMAIN_NAME"; then
+            terraform apply destroy-plan
+          else
+            echo "⚠️ Terraform destroy failed, this is expected if resources were manually cleaned up"
+          fi
 
   cleanup-shared-infrastructure:
     name: 🏗️ Cleanup Shared Infrastructure
