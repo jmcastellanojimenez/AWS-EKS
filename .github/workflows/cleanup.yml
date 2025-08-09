@@ -190,12 +190,32 @@ jobs:
             -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
             -backend-config="key=ingress-alb-${{ needs.validate-cleanup.outputs.environment }}/terraform.tfstate"
 
+      - name: Get Infrastructure Values
+        id: infra-values
+        run: |
+          # Get values from main infrastructure outputs
+          cd terraform/environments/${{ needs.validate-cleanup.outputs.environment }}
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
+                        -backend-config="key=${{ needs.validate-cleanup.outputs.environment }}/terraform.tfstate"
+          
+          HOSTED_ZONE_ID=$(terraform output -raw hosted_zone_id 2>/dev/null || echo "")
+          DOMAIN_NAME=$(terraform output -raw domain_name 2>/dev/null || echo "k8s-demo.local")
+          
+          echo "hosted-zone-id=$HOSTED_ZONE_ID" >> $GITHUB_OUTPUT
+          echo "domain-name=$DOMAIN_NAME" >> $GITHUB_OUTPUT
+          
+          echo "📋 Infrastructure values:"
+          echo "  Hosted Zone ID: $HOSTED_ZONE_ID"
+          echo "  Domain Name: $DOMAIN_NAME"
+
       - name: Terraform Destroy - ALB Pattern
         working-directory: terraform/alb-pattern
         timeout-minutes: 30
         run: |
           terraform plan -destroy -out=destroy-plan \
-            -var="environment=${{ needs.validate-cleanup.outputs.environment }}"
+            -var="environment=${{ needs.validate-cleanup.outputs.environment }}" \
+            -var="hosted_zone_id=${{ steps.infra-values.outputs.hosted-zone-id }}" \
+            -var="domain_name=${{ steps.infra-values.outputs.domain-name }}"
           terraform apply destroy-plan
 
   cleanup-nginx-infrastructure:
@@ -227,12 +247,32 @@ jobs:
             -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
             -backend-config="key=ingress-nginx-${{ needs.validate-cleanup.outputs.environment }}/terraform.tfstate"
 
+      - name: Get Infrastructure Values
+        id: infra-values
+        run: |
+          # Get values from main infrastructure outputs
+          cd terraform/environments/${{ needs.validate-cleanup.outputs.environment }}
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
+                        -backend-config="key=${{ needs.validate-cleanup.outputs.environment }}/terraform.tfstate"
+          
+          HOSTED_ZONE_ID=$(terraform output -raw hosted_zone_id 2>/dev/null || echo "")
+          DOMAIN_NAME=$(terraform output -raw domain_name 2>/dev/null || echo "k8s-demo.local")
+          
+          echo "hosted-zone-id=$HOSTED_ZONE_ID" >> $GITHUB_OUTPUT
+          echo "domain-name=$DOMAIN_NAME" >> $GITHUB_OUTPUT
+          
+          echo "📋 Infrastructure values:"
+          echo "  Hosted Zone ID: $HOSTED_ZONE_ID"
+          echo "  Domain Name: $DOMAIN_NAME"
+
       - name: Terraform Destroy - NGINX Pattern
         working-directory: terraform/nginx-pattern
         timeout-minutes: 30
         run: |
           terraform plan -destroy -out=destroy-plan \
-            -var="environment=${{ needs.validate-cleanup.outputs.environment }}"
+            -var="environment=${{ needs.validate-cleanup.outputs.environment }}" \
+            -var="hosted_zone_id=${{ steps.infra-values.outputs.hosted-zone-id }}" \
+            -var="domain_name=${{ steps.infra-values.outputs.domain-name }}"
           terraform apply destroy-plan
 
   cleanup-shared-infrastructure:
