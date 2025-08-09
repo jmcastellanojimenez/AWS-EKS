@@ -1,10 +1,6 @@
 name: 🧪 Test Kubernetes Ingress
 
 on:
-  workflow_run:
-    workflows: ["🚀 Deploy Kubernetes Ingress Patterns"]
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       ingress_pattern:
