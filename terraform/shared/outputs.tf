@@ -1,35 +1,24 @@
-# Outputs from shared module
-output "common_tags" {
-  description = "Common tags applied to all resources"
-  value       = local.common_tags
+output "hosted_zone_id" {
+  description = "Route53 hosted zone ID"
+  value       = aws_route53_zone.demo.zone_id
 }
 
-output "cluster_name" {
-  description = "EKS cluster name"
-  value       = local.cluster_name
+output "domain_name" {
+  description = "Domain name"
+  value       = aws_route53_zone.demo.name
 }
 
-output "env_config" {
-  description = "Environment-specific configuration"
-  value       = local.env_config
+output "external_dns_role_arn" {
+  description = "IAM role ARN for External-DNS"
+  value       = aws_iam_role.external_dns.arn
 }
 
-output "security_config" {
-  description = "Security and compliance settings"
-  value       = local.security_config
+output "cert_manager_role_arn" {
+  description = "IAM role ARN for cert-manager"
+  value       = aws_iam_role.cert_manager.arn
 }
 
-output "addon_versions" {
-  description = "Kubernetes add-on versions"
-  value       = local.addon_versions
-}
-
-output "cost_thresholds" {
-  description = "Cost monitoring thresholds"
-  value       = local.cost_thresholds
-}
-
-output "backup_config" {
-  description = "Backup and disaster recovery settings"
-  value       = local.backup_config
+output "name_servers" {
+  description = "Route53 name servers"
+  value       = aws_route53_zone.demo.name_servers
 }

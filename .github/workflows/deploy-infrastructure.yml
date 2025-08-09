@@ -310,26 +310,6 @@ jobs:
           name: kubeconfig-${{ needs.validate-inputs.outputs.environment }}
           path: ~/.kube/config
 
-  trigger-tools-installation:
-    name: 🛠️ Trigger Tools Installation
-    runs-on: ubuntu-latest
-    needs: [validate-inputs, terraform-operation]
-    if: needs.validate-inputs.outputs.action == 'apply' && needs.terraform-operation.result == 'success'
-    steps:
-      - name: Trigger Tools Installation Workflow
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'install-tools.yml',
-              ref: 'main',
-              inputs: {
-                environment: '${{ needs.validate-inputs.outputs.environment }}',
-                cluster_name: 'eks-learning-lab-${{ needs.validate-inputs.outputs.environment }}'
-              }
-            });
 
   post-action-notifications:
     name: 📢 Post-Action Notifications
@@ -354,7 +334,7 @@ jobs:
             if [[ "$action" == "apply" ]]; then
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "✅ Infrastructure deployed successfully!" >> $GITHUB_STEP_SUMMARY
-              echo "🛠️ Tools installation workflow has been triggered." >> $GITHUB_STEP_SUMMARY
+              echo "🎯 EKS cluster is ready for use!" >> $GITHUB_STEP_SUMMARY
             elif [[ "$action" == "destroy" ]]; then
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "✅ Infrastructure destroyed successfully!" >> $GITHUB_STEP_SUMMARY

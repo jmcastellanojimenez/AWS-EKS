@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pink-demo-app
+  namespace: default
+  labels:
+    app: pink-demo-app
+    pattern: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pink-demo-app
+  template:
+    metadata:
+      labels:
+        app: pink-demo-app
+        pattern: nginx
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html-content
+          mountPath: /usr/share/nginx/html
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+      volumes:
+      - name: html-content
+        configMap:
+          name: pink-demo-content
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pink-demo-content
+  namespace: default
+  labels:
+    app: pink-demo-app
+    pattern: nginx
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>NGINX Pattern Demo</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                color: white;
+                margin: 0;
+                padding: 40px;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+            }
+            .container {
+                text-align: center;
+                background: rgba(255,255,255,0.1);
+                padding: 40px;
+                border-radius: 15px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+            }
+            h1 {
+                font-size: 3em;
+                margin-bottom: 20px;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }
+            .pattern-info {
+                background: rgba(255,255,255,0.2);
+                padding: 20px;
+                border-radius: 10px;
+                margin: 20px 0;
+            }
+            .architecture {
+                margin-top: 30px;
+                font-family: monospace;
+                background: rgba(0,0,0,0.3);
+                padding: 20px;
+                border-radius: 10px;
+                text-align: left;
+            }
+            .hostname {
+                font-size: 0.8em;
+                margin-top: 20px;
+                opacity: 0.8;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🌸 NGINX Pattern Demo</h1>
+            <div class="pattern-info">
+                <h2>NGINX Ingress Controller</h2>
+                <p>This application is served through NGINX Ingress with NLB, automatic SSL certificates and DNS management.</p>
+            </div>
+            
+            <div class="architecture">
+                <strong>Traffic Flow:</strong><br>
+                Internet → Route53 → NLB → NGINX Controller → ClusterIP Service → Pod<br><br>
+                <strong>Components:</strong><br>
+                • NGINX Ingress Controller<br>
+                • External-DNS (Route53 automation)<br>
+                • cert-manager (Let's Encrypt SSL)<br>
+                • Pink-themed demo application
+            </div>
+            
+            <div class="hostname">
+                <strong>Hostname:</strong> <span id="hostname">Loading...</span><br>
+                <strong>Pod:</strong> <span id="pod">PINK_DEMO_POD</span>
+            </div>
+        </div>
+        
+        <script>
+            document.getElementById('hostname').textContent = window.location.hostname;
+            // This would be replaced by the actual pod name in a real deployment
+            document.getElementById('pod').textContent = 'pink-demo-' + Math.random().toString(36).substr(2, 5);
+        </script>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pink-demo-service
+  namespace: default
+  labels:
+    app: pink-demo-app
+    pattern: nginx
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: pink-demo-app

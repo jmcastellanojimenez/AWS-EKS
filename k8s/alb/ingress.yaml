@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: demo-app-alb
+  namespace: default
+  labels:
+    app: demo-app-alb
+    pattern: alb
+  annotations:
+    # ALB-specific annotations
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/load-balancer-name: demo-alb-k8s-ingress
+    
+    # Health check settings
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
+    alb.ingress.kubernetes.io/healthy-threshold-count: '2'
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
+    
+    # SSL and redirect settings
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    
+    # External-DNS annotation for automatic Route53 record creation
+    external-dns.alpha.kubernetes.io/hostname: demo-alb.k8s-demo.local
+    
+    # cert-manager annotations for automatic SSL certificate
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/acme-challenge-type: http01
+    
+    # ALB tags for cost tracking
+    alb.ingress.kubernetes.io/tags: 'Environment=dev,Pattern=alb,Project=k8s-ingress-workshop'
+
+spec:
+  tls:
+  - hosts:
+    - demo-alb.k8s-demo.local
+    secretName: demo-alb-tls-cert
+    
+  rules:
+  - host: demo-alb.k8s-demo.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: purple-demo-service
+            port:
+              number: 80
