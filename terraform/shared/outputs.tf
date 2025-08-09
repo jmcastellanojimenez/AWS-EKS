@@ -1,24 +1,46 @@
+# Shared configuration outputs
+output "common_tags" {
+  description = "Common tags for all resources"
+  value       = local.common_tags
+}
+
+output "cluster_name" {
+  description = "EKS cluster name"
+  value       = local.cluster_name
+}
+
+output "env_config" {
+  description = "Environment-specific configuration"
+  value       = local.env_config
+}
+
+output "security_config" {
+  description = "Security configuration"
+  value       = local.security_config
+}
+
+output "addon_versions" {
+  description = "Kubernetes addon versions"
+  value       = local.addon_versions
+}
+
+output "cost_thresholds" {
+  description = "Cost monitoring thresholds"
+  value       = local.cost_thresholds
+}
+
+# Route53 outputs (conditional based on whether domain was created)
 output "hosted_zone_id" {
-  description = "Route53 hosted zone ID"
-  value       = aws_route53_zone.demo.zone_id
+  description = "Route53 hosted zone ID (empty if no domain configured)"
+  value       = length(aws_route53_zone.demo) > 0 ? aws_route53_zone.demo[0].zone_id : ""
 }
 
 output "domain_name" {
   description = "Domain name"
-  value       = aws_route53_zone.demo.name
-}
-
-output "external_dns_role_arn" {
-  description = "IAM role ARN for External-DNS"
-  value       = aws_iam_role.external_dns.arn
-}
-
-output "cert_manager_role_arn" {
-  description = "IAM role ARN for cert-manager"
-  value       = aws_iam_role.cert_manager.arn
+  value       = var.domain_name
 }
 
 output "name_servers" {
-  description = "Route53 name servers"
-  value       = aws_route53_zone.demo.name_servers
+  description = "Route53 name servers (empty if no domain configured)"
+  value       = length(aws_route53_zone.demo) > 0 ? aws_route53_zone.demo[0].name_servers : []
 }

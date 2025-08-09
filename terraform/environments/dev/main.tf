@@ -32,8 +32,11 @@ provider "aws" {
 module "shared" {
   source = "../../shared"
   
+  project_name = var.project_name
   environment  = var.environment
   cluster_name = var.cluster_name
+  aws_region   = var.aws_region
+  vpc_cidr     = var.vpc_cidr
 }
 
 locals {

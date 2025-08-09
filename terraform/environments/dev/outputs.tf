@@ -69,6 +69,31 @@ output "ebs_csi_driver_role_arn" {
   value       = module.iam_irsa.ebs_csi_driver_role_arn
 }
 
+output "external_dns_role_arn" {
+  description = "ARN of the External-DNS IAM role"
+  value       = module.iam_irsa.external_dns_role_arn
+}
+
+output "cert_manager_role_arn" {
+  description = "ARN of the cert-manager IAM role"
+  value       = module.iam_irsa.cert_manager_role_arn
+}
+
+output "hosted_zone_id" {
+  description = "Route53 hosted zone ID for ingress demos"
+  value       = module.shared.hosted_zone_id
+}
+
+output "domain_name" {
+  description = "Domain name for ingress demos"
+  value       = module.shared.domain_name
+}
+
+output "name_servers" {
+  description = "Route53 name servers for the demo domain"
+  value       = module.shared.name_servers
+}
+
 output "cluster_data_bucket" {
   description = "S3 bucket for cluster data and backups"
   value       = aws_s3_bucket.cluster_data.bucket
