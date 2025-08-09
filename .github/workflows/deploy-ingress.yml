@@ -30,6 +30,15 @@ on:
         - dev
         - staging
         - prod
+      domain_name:
+        description: 'Domain name for the demo'
+        required: false
+        default: 'k8s-demo.local'
+        type: string
+      hosted_zone_id:
+        description: 'Route53 hosted zone ID (leave empty to auto-create)'
+        required: false
+        type: string
 
 permissions:
   id-token: write
