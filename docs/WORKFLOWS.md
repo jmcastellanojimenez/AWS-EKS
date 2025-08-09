@@ -12,6 +12,7 @@ This repository includes 5 automated workflows for managing AWS EKS infrastructu
 | [🚀 Deploy Kubernetes Ingress Patterns](#-deploy-kubernetes-ingress-patterns) | Deploy ALB/NGINX ingress | Manual |
 | [🧹 Cleanup Kubernetes Ingress Resources](#-cleanup-kubernetes-ingress-resources) | Clean up ingress resources | Manual |
 | [🧪 Test Kubernetes Ingress](#-test-kubernetes-ingress) | Validate ingress deployment | Manual |
+| [🔧 Update EKS Add-ons](#-update-eks-add-ons) | Update core EKS add-ons to latest versions | Manual |
 | [💰 Daily AWS Cost Monitoring](#-daily-aws-cost-monitoring) | Monitor AWS costs and resources | Manual |
 
 ---
@@ -299,6 +300,201 @@ Environment: dev
 Domain: my-domain.com
 Load Balancer: my-nlb-123456.us-east-1.elb.amazonaws.com
 ```
+
+---
+
+## 🔧 Update EKS Add-ons
+
+**File:** `.github/workflows/update-eks-addons.yml`
+
+### Purpose
+Update core EKS add-ons to their latest versions for security patches, bug fixes, and new features. Manages VPC CNI, CoreDNS, kube-proxy, and AWS EBS CSI Driver.
+
+### Capabilities
+- ✅ Check current add-on versions vs. latest available
+- ✅ Selective or bulk add-on updates
+- ✅ Configuration backup before updates
+- ✅ Multiple update modes (check-only, with approval, force)
+- ✅ Preserve existing add-on settings
+- ✅ Post-update cluster health verification
+- ✅ Rollback support with backup artifacts
+
+### Input Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `environment` | choice | ✅ | dev | Target environment |
+| `addons_to_update` | choice | ✅ | all | Which add-ons to update |
+| `update_mode` | choice | ✅ | check-only | Update behavior mode |
+| `preserve_settings` | boolean | ❌ | true | Keep current add-on configurations |
+| `backup_before_update` | boolean | ❌ | true | Backup configurations first |
+
+### Add-ons Supported
+
+#### 1. Amazon VPC CNI
+- **Purpose**: Pod networking and IP address management
+- **Critical**: Yes - affects all pod networking
+- **Update Impact**: May require brief network interruption
+
+#### 2. CoreDNS
+- **Purpose**: Cluster DNS resolution
+- **Critical**: Yes - affects service discovery
+- **Update Impact**: Brief DNS resolution delays possible
+
+#### 3. kube-proxy
+- **Purpose**: Network proxy for Kubernetes services
+- **Critical**: Yes - affects service networking
+- **Update Impact**: Service traffic may be briefly affected
+
+#### 4. AWS EBS CSI Driver
+- **Purpose**: Persistent volume management
+- **Critical**: Yes - affects storage operations
+- **Update Impact**: New volume operations may be delayed
+
+### Update Modes
+
+#### Check Only Mode
+```yaml
+Update Mode: check-only
+# Shows available updates without making changes
+# Safe for production environments
+# Generates status report
+```
+
+#### Update with Approval Mode
+```yaml
+Update Mode: update-with-approval
+# Performs updates with human oversight
+# Recommended for production
+# Includes pre-update validation
+```
+
+#### Force Update Mode  
+```yaml
+Update Mode: force-update
+# Updates even if no new version detected
+# Use for troubleshooting or rollbacks
+# Requires careful consideration
+```
+
+### Usage Examples
+
+#### Check All Add-ons Status
+```yaml
+Environment: prod
+Add-ons to Update: all
+Update Mode: check-only
+Preserve Settings: true
+Backup Before Update: false
+```
+
+#### Update Specific Add-on
+```yaml
+Environment: dev
+Add-ons to Update: vpc-cni
+Update Mode: update-with-approval
+Preserve Settings: true
+Backup Before Update: true
+```
+
+#### Emergency Update All Add-ons
+```yaml
+Environment: dev
+Add-ons to Update: all
+Update Mode: force-update
+Preserve Settings: true
+Backup Before Update: true
+```
+
+### Safety Features
+
+#### Pre-Update Checks
+- ✅ Cluster status validation (must be ACTIVE)
+- ✅ Current version detection and comparison
+- ✅ Kubernetes version compatibility check
+- ✅ Add-on health status verification
+
+#### Backup System
+- ✅ AWS add-on configurations exported
+- ✅ Kubernetes manifests backed up
+- ✅ Backup artifacts uploaded for 30 days
+- ✅ Easy restoration if issues occur
+
+#### Update Process
+- ✅ Controlled update with conflict resolution
+- ✅ Real-time status monitoring
+- ✅ Timeout protection (15-minute limit per add-on)
+- ✅ Detailed logging for troubleshooting
+
+#### Post-Update Validation
+- ✅ Node status verification
+- ✅ System pod health checks
+- ✅ Add-on status confirmation in AWS
+- ✅ Network connectivity validation
+
+### Workflow Execution Flow
+
+```mermaid
+graph TD
+    A[Validate Cluster] --> B[Check Add-ons Status]
+    B --> C{Update Mode?}
+    C -->|check-only| D[Generate Report]
+    C -->|update modes| E[Backup Configurations]
+    E --> F[Update Add-ons]
+    F --> G[Verify Cluster Health]
+    G --> H[Send Notifications]
+    D --> H
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+**Add-on stuck in "UPDATING" state**
+```bash
+# Check add-on details
+aws eks describe-addon --cluster-name CLUSTER_NAME --addon-name ADDON_NAME
+
+# If needed, restore from backup artifact
+kubectl apply -f backup-file.yaml
+```
+
+**Pods not starting after update**
+```bash
+# Check pod events
+kubectl describe pod POD_NAME -n kube-system
+
+# Check add-on logs
+kubectl logs -l app=ADDON_NAME -n kube-system
+```
+
+**Network connectivity issues**
+```bash
+# Test DNS resolution
+nslookup kubernetes.default.svc.cluster.local
+
+# Check VPC CNI status
+kubectl get pods -n kube-system -l app=aws-node
+```
+
+### Best Practices
+
+#### Scheduling Updates
+- **Development**: Update immediately when available
+- **Staging**: Update weekly during maintenance windows
+- **Production**: Update monthly with thorough testing
+
+#### Update Order (recommended)
+1. **kube-proxy** - Network services foundation
+2. **VPC CNI** - Pod networking
+3. **CoreDNS** - DNS resolution  
+4. **EBS CSI** - Storage operations
+
+#### Monitoring After Updates
+- Monitor cluster metrics for 24 hours
+- Check application logs for networking issues
+- Verify persistent volume operations
+- Test DNS resolution from pods
 
 ---
 

@@ -140,6 +140,10 @@ Hosted Zone ID: Z123456789ABCDEFG  # Your existing zone
 3. Configure monitoring and alerts
 4. Set up CI/CD pipelines
 
+#### Maintenance Operations
+- **Update EKS Add-ons**: Run 🔧 Update EKS Add-ons workflow to keep cluster components current
+- **Monitor Costs**: Use 💰 Daily AWS Cost Monitoring for ongoing cost optimization
+
 #### Advanced Patterns
 - Deploy both ALB and NGINX for comparison
 - Set up multi-environment workflow
