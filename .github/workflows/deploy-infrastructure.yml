@@ -34,11 +34,6 @@ on:
     paths:
       - 'terraform/**'
       - '.github/workflows/deploy-infrastructure.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/**'
 
 permissions:
   id-token: write
