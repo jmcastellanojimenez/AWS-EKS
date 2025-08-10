@@ -1,8 +1,13 @@
-name: 🚀 Deploy Kubernetes Ingress Patterns
+name: ⚠️ [DEPRECATED] Deploy Kubernetes Ingress Patterns
 
 on:
   workflow_dispatch:
     inputs:
+      _deprecated_notice:
+        description: '⚠️ DEPRECATED: Use "SA Infra - Complete Ingress Deployment" instead'
+        required: true
+        default: 'I understand this workflow is deprecated'
+        type: string
       ingress_pattern:
         description: 'Ingress Pattern to Deploy'
         required: true

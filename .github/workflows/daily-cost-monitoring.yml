@@ -1,6 +1,10 @@
 name: 💰 Daily AWS Cost Monitoring
 
 on:
+  schedule:
+    # Run daily at 8:00 AM CET (7:00 AM UTC in winter, 6:00 AM UTC in summer)
+    # Using 7:00 AM UTC as a compromise
+    - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       days_back:
@@ -374,13 +378,16 @@ jobs:
           cat cost-reports/daily-report.md >> $GITHUB_STEP_SUMMARY
 
       - name: 💬 Send Slack Notification
-        if: ${{ vars.SLACK_WEBHOOK_URL && (github.event.inputs.send_slack_report != 'false') }}
+        if: ${{ secrets.SLACK_WEBHOOK_URL && (github.event.inputs.send_slack_report != 'false') }}
         run: |
           # Prepare Slack message
           COST_EMOJI="💚"
-          if (( $(echo "${{ steps.cost-report.outputs.total_cost }} > 100" | bc -l) )); then
+          TOTAL_COST="${{ steps.cost-report.outputs.total_cost }}"
+          
+          # Use Python for cost threshold checks
+          if python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > 100 else 1)"; then
             COST_EMOJI="🔴"
-          elif (( $(echo "${{ steps.cost-report.outputs.total_cost }} > 50" | bc -l) )); then
+          elif python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > 50 else 1)"; then
             COST_EMOJI="🟡"
           fi
           
@@ -439,7 +446,7 @@ jobs:
           # Send to Slack
           curl -X POST -H 'Content-type: application/json' \
             --data @slack-payload.json \
-            "${{ vars.SLACK_WEBHOOK_URL }}" || echo "Failed to send Slack notification"
+            "${{ secrets.SLACK_WEBHOOK_URL }}" || echo "Failed to send Slack notification"
 
       - name: ⚠️ Cost Alert Check
         run: |
@@ -454,10 +461,11 @@ jobs:
           echo "  Total Cost: \$$TOTAL_COST"
           echo "  Daily Average: \$$DAILY_AVG"
           
-          if (( $(echo "$TOTAL_COST > $CRITICAL_THRESHOLD" | bc -l) )); then
+          # Use Python for floating point comparison instead of bc
+          if python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > $CRITICAL_THRESHOLD else 1)"; then
             echo "🚨 CRITICAL: Total cost exceeds \$$CRITICAL_THRESHOLD!"
             echo "::warning::High AWS costs detected - Total: \$$TOTAL_COST"
-          elif (( $(echo "$TOTAL_COST > $WARNING_THRESHOLD" | bc -l) )); then
+          elif python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > $WARNING_THRESHOLD else 1)"; then
             echo "⚠️ WARNING: Total cost exceeds \$$WARNING_THRESHOLD"
             echo "::notice::AWS costs above warning threshold - Total: \$$TOTAL_COST"
           else
