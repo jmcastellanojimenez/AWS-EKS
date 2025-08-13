@@ -1,4 +1,4 @@
-name: 🏗️ Workflow 1: Foundation Platform
+name: 🏗️ Foundation Platform
 
 # MANUAL EXECUTION ONLY - No automatic triggers on push/PR
 on:
