@@ -14,37 +14,37 @@ locals {
   # Cluster name with environment prefix
   cluster_name = var.cluster_name != "" ? var.cluster_name : "${var.project_name}-${var.environment}"
 
-  # Cost optimization settings based on environment
+  # Worker node settings - standardized across environments
   cost_optimized_settings = {
     dev = {
       enable_nat_gateway   = false  # Disable NAT for dev to save costs
       enable_vpc_endpoints = false
       enable_flow_logs     = false
       capacity_type        = "SPOT"
-      desired_capacity     = 2
-      min_capacity         = 1
-      max_capacity         = 3
-      instance_types       = ["t3.medium"]
+      desired_capacity     = 3
+      min_capacity         = 3
+      max_capacity         = 5
+      instance_types       = ["t3.large"]
     }
     staging = {
       enable_nat_gateway   = true
       enable_vpc_endpoints = false
       enable_flow_logs     = false
       capacity_type        = "SPOT"
-      desired_capacity     = 2
-      min_capacity         = 1
-      max_capacity         = 3
-      instance_types       = ["t3.medium"]
+      desired_capacity     = 3
+      min_capacity         = 3
+      max_capacity         = 5
+      instance_types       = ["t3.large"]
     }
     prod = {
       enable_nat_gateway   = true
       enable_vpc_endpoints = true
       enable_flow_logs     = true
-      capacity_type        = "ON_DEMAND"
+      capacity_type        = "SPOT"
       desired_capacity     = 3
-      min_capacity         = 2
-      max_capacity         = 6
-      instance_types       = ["t3.medium", "t3.large"]
+      min_capacity         = 3
+      max_capacity         = 5
+      instance_types       = ["t3.large"]
     }
   }
 

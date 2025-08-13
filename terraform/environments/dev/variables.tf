@@ -38,7 +38,7 @@ variable "vpc_cidr" {
 variable "instance_types" {
   description = "List of EC2 instance types for the node group"
   type        = list(string)
-  default     = ["t3.small"]
+  default     = ["t3.large"]
 }
 
 variable "capacity_type" {
@@ -50,19 +50,19 @@ variable "capacity_type" {
 variable "desired_capacity" {
   description = "Desired number of nodes"
   type        = number
-  default     = 1
+  default     = 3
 }
 
 variable "min_capacity" {
   description = "Minimum number of nodes"
   type        = number
-  default     = 1
+  default     = 3
 }
 
 variable "max_capacity" {
   description = "Maximum number of nodes"
   type        = number
-  default     = 2
+  default     = 5
 }
 
 variable "node_disk_size" {
