@@ -1,5 +1,6 @@
 name: 🏗️ Workflow 1: Foundation Platform
 
+# MANUAL EXECUTION ONLY - No automatic triggers on push/PR
 on:
   workflow_dispatch:
     inputs:

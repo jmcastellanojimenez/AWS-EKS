@@ -77,10 +77,11 @@
   - `AWS_ACCOUNT_ID` - AWS account ID for S3 backend
 
 ### Execution Model
-**Manual Only** - Workflow runs exclusively via GitHub UI trigger:
+**Manual Only** - Workflow configured for exclusive manual execution:
 - ❌ No automatic execution on code push/PR
-- ✅ Manual trigger via Actions tab → "Run workflow"
+- ✅ Manual trigger via Actions tab → "Run workflow"  
 - 🔒 Complete control over infrastructure changes
+- ⚠️ **Note**: GitHub may run workflow once on initial push after creation (ignore this)
 
 ### Workflow Inputs
 | Input | Options | Default | Description |
