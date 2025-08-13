@@ -76,6 +76,12 @@
   - `AWS_REGION` - Target AWS region (us-east-1)
   - `AWS_ACCOUNT_ID` - AWS account ID for S3 backend
 
+### Execution Model
+**Manual Only** - Workflow runs exclusively via GitHub UI trigger:
+- ❌ No automatic execution on code push/PR
+- ✅ Manual trigger via Actions tab → "Run workflow"
+- 🔒 Complete control over infrastructure changes
+
 ### Workflow Inputs
 | Input | Options | Default | Description |
 |-------|---------|---------|-------------|
