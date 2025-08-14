@@ -263,3 +263,387 @@ annotations:
   service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
   service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
 ```
+
+---
+
+## 🔧 **Environment Configuration**
+
+### **Environment-Specific Settings**
+Configure different settings per environment for proper deployment lifecycle:
+
+```yaml
+# Development Environment
+dev:
+  ingress_domain: "dev-api.yourdomain.com"
+  certificate_issuer: "letsencrypt-staging"  # Use staging for testing
+  ambassador_replica_count: 1               # Single replica for dev
+  enable_monitoring: false                  # Reduced overhead
+  log_level: "debug"                       # Verbose logging
+  cors_origins: ["*"]                      # Permissive CORS for development
+
+# Production Environment  
+prod:
+  ingress_domain: "api.yourdomain.com"
+  certificate_issuer: "letsencrypt-prod"   # Production certificates
+  ambassador_replica_count: 3              # High availability
+  enable_monitoring: true                  # Full observability
+  log_level: "info"                       # Production logging
+  cors_origins: ["https://app.yourdomain.com"]  # Restricted CORS
+
+# Staging Environment
+staging:
+  ingress_domain: "staging-api.yourdomain.com"
+  certificate_issuer: "letsencrypt-staging"
+  ambassador_replica_count: 2
+  enable_monitoring: true
+  log_level: "info"
+  cors_origins: ["https://staging-app.yourdomain.com"]
+```
+
+### **Terraform Variable Examples**
+```hcl
+# terraform.tfvars for dev
+ingress_domain = "dev-api.yourdomain.com"
+enable_letsencrypt = true
+letsencrypt_email = "admin@yourdomain.com"
+ambassador_replica_count = 1
+enable_monitoring = false
+dns_provider = "cloudflare"
+domain_filters = ["yourdomain.com"]
+
+# terraform.tfvars for prod
+ingress_domain = "api.yourdomain.com"
+enable_letsencrypt = true
+letsencrypt_email = "admin@yourdomain.com"
+ambassador_replica_count = 3
+enable_monitoring = true
+load_balancer_scheme = "internet-facing"
+cors_origins = ["https://app.yourdomain.com"]
+```
+
+---
+
+## 🛡️ **Security Best Practices**
+
+### **Rate Limiting Configuration**
+Implement proper rate limiting to protect your APIs:
+
+```yaml
+# Basic Rate Limiting Mapping
+apiVersion: getambassador.io/v3alpha1
+kind: RateLimitService
+metadata:
+  name: basic-rate-limit
+  namespace: ambassador
+spec:
+  service: "ratelimit:5000"
+---
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: api-with-rate-limit
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/"
+  service: "backend-service:8080"
+  rate_limits:
+  - descriptor:
+    - key: "generic_key"
+      value: "basic"
+    rate_limit:
+      unit: "minute"
+      requests_per_unit: 100  # 100 requests/minute per IP
+```
+
+### **Advanced Rate Limiting Examples**
+```yaml
+# Authenticated User Rate Limiting
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: authenticated-api
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/user/"
+  service: "user-service:8080"
+  rate_limits:
+  - descriptor:
+    - key: "user_id"
+      value: "authenticated"
+    rate_limit:
+      unit: "minute"
+      requests_per_unit: 1000  # 1000 requests/minute per authenticated user
+
+---
+# Admin Endpoints - Stricter Limits
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: admin-api
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/admin/"
+  service: "admin-service:8080"
+  rate_limits:
+  - descriptor:
+    - key: "remote_address"
+      value: "admin"
+    rate_limit:
+      unit: "minute"
+      requests_per_unit: 10    # 10 requests/minute per IP for admin
+```
+
+### **Security Headers**
+```yaml
+# Security Headers via Ambassador
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: secure-api
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/"
+  service: "backend-service:8080"
+  add_response_headers:
+    X-Content-Type-Options: "nosniff"
+    X-Frame-Options: "DENY"
+    X-XSS-Protection: "1; mode=block"
+    Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+    Content-Security-Policy: "default-src 'self'"
+```
+
+### **IP Allowlisting**
+```yaml
+# Restrict access to specific IPs
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: restricted-api
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/internal/"
+  service: "internal-service:8080"
+  bypass_auth: true
+  modules:
+  - name: "ip-allow"
+    config:
+      ip_allow:
+      - "10.0.0.0/8"      # Private networks
+      - "192.168.0.0/16"  # Private networks
+      - "172.16.0.0/12"   # Private networks
+      ip_deny: ["0.0.0.0/0"]  # Deny all others
+```
+
+---
+
+## 🔗 **Integration with Future Workflows**
+
+### **Forward Compatibility Planning**
+
+#### **🏗️ Workflow 3 (LGTM Observability Stack)**
+Ambassador automatically exposes metrics for monitoring integration:
+
+```yaml
+# Automatic Prometheus metrics exposure
+# Metrics available at: http://ambassador-admin:8877/metrics
+# Future LGTM stack will automatically discover and scrape these
+
+# Key metrics exposed:
+- envoy_http_downstream_rq_total
+- envoy_cluster_upstream_rq_retry  
+- envoy_cluster_upstream_rq_pending
+- ambassador_edge_stack_go_*
+```
+
+#### **🔄 Workflow 4 (ArgoCD + Tekton GitOps)**
+Ambassador Mappings integrate seamlessly with GitOps:
+
+```yaml
+# GitOps-ready Mapping structure
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: gitops-managed-service
+  namespace: production
+  labels:
+    app.kubernetes.io/managed-by: "argocd"
+    app.kubernetes.io/part-of: "microservices-platform"
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/orders/"
+  service: "orders-service:8080"
+  # ArgoCD will manage updates to this mapping
+```
+
+#### **🛡️ Workflow 5 (Security Stack)**
+Ambassador integrates with security tools:
+
+```yaml
+# External Auth Integration (future)
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: auth-protected-api
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/protected/"
+  service: "protected-service:8080"
+  # Future: Integration with OAuth2-Proxy, Keycloak, etc.
+  auth_service: "oauth2-proxy.security:4180"
+```
+
+#### **🕸️ Workflow 6 (Istio Service Mesh)**
+Ambassador + Istio integration patterns:
+
+```yaml
+# Istio Integration Mode
+# Ambassador handles north-south traffic (ingress)
+# Istio handles east-west traffic (service-to-service)
+
+# Edge routing via Ambassador
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: istio-mesh-entry
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/"
+  service: "istio-proxy.istio-system:80"  # Route to Istio Gateway
+  
+# Istio takes over internal routing
+# Benefits: mTLS, circuit breaking, retries, observability
+```
+
+#### **💾 Workflow 7 (Data Services Stack)**
+Database and cache service exposure:
+
+```yaml
+# Database Admin Interfaces (secured)
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: pgadmin-interface
+spec:
+  hostname: "admin.yourdomain.com"
+  prefix: "/pgadmin/"
+  service: "pgadmin:80"
+  # Future: Integration with database authentication
+  
+# API endpoints for data services
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: data-api
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/data/"
+  service: "data-service:8080"
+  timeout_ms: 60000  # Longer timeout for data operations
+```
+
+### **Microservices Integration Patterns**
+
+#### **Multi-Service Routing**
+```yaml
+# Pattern for 5 planned microservices
+# User Service
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: user-service
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/users/"
+  service: "user-service:8080"
+  timeout_ms: 15000
+
+---
+# Product Service
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: product-service
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/products/"
+  service: "product-service:8080"
+  timeout_ms: 15000
+
+---
+# Order Service
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: order-service
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/orders/"
+  service: "order-service:8080"
+  timeout_ms: 30000  # Orders may take longer
+
+---
+# Payment Service
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: payment-service
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/payments/"
+  service: "payment-service:8080"
+  timeout_ms: 45000  # Payment processing timeout
+
+---
+# Notification Service
+apiVersion: getambassador.io/v3alpha1
+kind: Mapping
+metadata:
+  name: notification-service
+spec:
+  hostname: "api.yourdomain.com"
+  prefix: "/api/v1/notifications/"
+  service: "notification-service:8080"
+  timeout_ms: 10000  # Fast notifications
+```
+
+### **Resource Planning for Future Workflows**
+
+#### **Current Platform Capacity (t3.large nodes):**
+```yaml
+# Total cluster capacity: ~6 CPU cores, ~7.5Gi memory per node (3-5 nodes)
+# Workflow 1 (Foundation): ~0.5 CPU cores, ~1Gi memory
+# Workflow 2 (Ingress): ~1.2 CPU cores, ~768Mi memory
+# Remaining: ~2.8 CPU cores, ~1.2Gi memory per node
+
+# Future workflow allocations:
+Workflow_3_LGTM:
+  prometheus: "500m CPU, 512Mi memory"
+  grafana: "100m CPU, 128Mi memory"
+  loki: "300m CPU, 256Mi memory"
+  
+Workflow_4_GitOps:
+  argocd: "200m CPU, 256Mi memory"
+  tekton: "300m CPU, 512Mi memory"
+  
+Workflow_5_Security:
+  falco: "100m CPU, 128Mi memory"
+  oauth2_proxy: "50m CPU, 64Mi memory"
+  
+Workflow_6_Istio:
+  istiod: "500m CPU, 512Mi memory"
+  istio_proxy: "100m CPU, 128Mi memory per service"
+  
+Workflow_7_Data:
+  postgresql: "200m CPU, 512Mi memory"
+  redis: "100m CPU, 128Mi memory"
+  
+Microservices_5x:
+  each_service: "300m CPU, 512Mi memory (3 replicas)"
+  total: "4.5 CPU, 7.5Gi memory"
+
+# Total future needs: ~7 CPU cores, ~11Gi memory
+# Platform auto-scaling: 3-5 nodes provides ~18-30 CPU cores, ~22-37Gi memory
+# Conclusion: Platform can handle all planned workloads with headroom
+```
+
+**🚀 The Ingress + API Gateway Stack is future-ready for all planned workflows and microservices!**
