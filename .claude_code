@@ -1,0 +1,103 @@
+# Claude Code Configuration for EKS Platform Workflows
+# Place this file in your repository root directory
+
+[project]
+name = "EKS Platform Workflows"
+description = "Cloud-agnostic Kubernetes platform with enterprise-grade infrastructure components"
+type = "infrastructure"
+
+[context]
+# Core project understanding
+purpose = "Multi-workflow EKS platform deployment with Terraform and GitHub Actions"
+architecture = "Cloud-agnostic Kubernetes platform (AWS EKS focus)"
+tech_stack = ["Terraform", "Kubernetes", "AWS EKS", "GitHub Actions", "Helm"]
+
+# Current implementation status
+workflows_completed = ["Workflow 1: Foundation Platform", "Workflow 2: Ingress + API Gateway"]
+workflows_planned = [
+  "Workflow 3: LGTM Observability Stack", 
+  "Workflow 4: GitOps (ArgoCD/Tekton)",
+  "Workflow 5: Security Foundation", 
+  "Workflow 6: Service Mesh (Istio)",
+  "Workflow 7: Data Services"
+]
+
+# Target applications
+applications = ["EcoTrack - Java Spring Boot microservices", "5 microservices total"]
+application_specs = "256Mi/512Mi memory, 100m/300m CPU, 3 replicas each"
+
+[infrastructure]
+# Current cluster configuration
+cluster_type = "AWS EKS"
+instance_type = "t3.large (2 vCPU, 8GB RAM)"
+node_scaling = "3-5 nodes"
+capacity_type = "SPOT instances"
+region = "us-east-1"
+
+# Platform components
+foundation_stack = ["VPC", "EKS Cluster", "IAM/IRSA", "Essential Add-ons"]
+ingress_stack = ["cert-manager", "external-dns", "Ambassador (Emissary-Ingress)"]
+future_stacks = ["LGTM", "ArgoCD", "Tekton", "OpenBao", "OPA Gatekeeper", "Falco", "Istio", "PostgreSQL", "Redis", "Kafka"]
+
+[patterns]
+# Established deployment patterns
+execution_model = "Manual GitHub Actions workflows only"
+terraform_structure = "modules/ + environments/ pattern"
+state_management = "S3 backend with DynamoDB locking"
+workflow_dependencies = "Sequential: Foundation → Ingress → Others"
+
+# Naming conventions
+workflow_naming = "🏗️ Workflow X: Component Name"
+module_naming = "terraform/modules/{component}/"
+environment_naming = "terraform/environments/{env}/"
+
+[guidelines]
+# Development principles
+cloud_agnostic = true
+enterprise_ready = true
+resource_optimized = true
+security_focused = true
+
+# Code quality standards
+terraform_style = "HashiCorp standard formatting"
+documentation_style = "Enterprise README with troubleshooting sections"
+github_actions = "Manual execution with proper input validation"
+resource_management = "Requests/limits for all components"
+
+[working_context]
+# Current focus areas
+current_workflow = "Workflow 2 deployment and testing"
+next_priorities = ["Test Workflow 2 deployment", "Plan Workflow 3 (LGTM)", "Application integration"]
+
+# Key integration points
+irsa_usage = "All components use IRSA for AWS service authentication"
+dns_integration = "Cloudflare via external-dns"
+ssl_management = "Let's Encrypt via cert-manager"
+traffic_flow = "Internet → Cloudflare → AWS NLB → Ambassador → Services"
+
+# Resource planning
+current_usage = "~1.2 CPU cores, ~768Mi memory (Workflows 1+2)"
+remaining_capacity = "~2.8 CPU cores, ~1.2Gi memory for future workflows"
+scaling_strategy = "Auto-scaling node groups handle all planned workloads"
+
+[files]
+# Key file locations and purposes
+terraform_main = "terraform/environments/dev/"
+workflow_configs = ".github/workflows/"
+documentation = "README.md files per workflow"
+modules = "terraform/modules/{cert-manager,external-dns,ambassador}/"
+
+# Important patterns
+backend_config = "S3 + DynamoDB with environment-specific state paths"
+variable_structure = "Environment-specific variables.tf files"
+output_structure = "Comprehensive outputs for component integration"
+
+[notes]
+# Special considerations
+spot_instances = "All environments use SPOT for cost optimization"
+multi_az = "High availability across multiple AZs"
+future_migration = "Platform designed to work on GCP, Azure, on-premise"
+workflow_order = "Dependencies enforced: each workflow checks prerequisites"
+
+[when new workflow documentation]
+README_Component_Name.md

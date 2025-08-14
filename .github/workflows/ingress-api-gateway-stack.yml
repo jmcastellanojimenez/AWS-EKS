@@ -1,4 +1,4 @@
-name: 🌐 Workflow 2: Ingress + API Gateway Stack
+name: 🌐 Ingress + API Gateway Stack
 
 # MANUAL EXECUTION ONLY - No automatic triggers on push/PR
 on:
