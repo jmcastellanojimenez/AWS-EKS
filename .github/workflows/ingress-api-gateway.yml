@@ -1,0 +1,274 @@
+name: 🌐 Workflow 2: Ingress + API Gateway Stack
+
+# MANUAL EXECUTION ONLY - No automatic triggers on push/PR
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Infrastructure Action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply  
+        - destroy
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      confirm_destroy:
+        description: 'For DESTROY: type CONFIRM-DESTROY'
+        required: false
+        type: string
+      auto_approve:
+        description: 'Auto-approve apply (use with caution)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.validate.outputs.action }}
+      environment: ${{ steps.validate.outputs.environment }}
+      should-proceed: ${{ steps.validate.outputs.should-proceed }}
+    steps:
+      - name: Validate Inputs
+        id: validate
+        run: |
+          echo "action=${{ inputs.action }}" >> $GITHUB_OUTPUT
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          
+          # Validate destroy confirmation
+          if [[ "${{ inputs.action }}" == "destroy" ]]; then
+            if [[ "${{ inputs.confirm_destroy }}" != "CONFIRM-DESTROY" ]]; then
+              echo "❌ Destroy action requires 'CONFIRM-DESTROY' confirmation"
+              echo "should-proceed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "✅ Destroy confirmation validated"
+          fi
+          
+          echo "should-proceed=true" >> $GITHUB_OUTPUT
+
+  check-foundation:
+    name: 🔍 Check Foundation Platform
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: needs.validate-inputs.outputs.should-proceed == 'true'
+    outputs:
+      foundation-ready: ${{ steps.check.outputs.foundation-ready }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CheckFoundation
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🔍 Check Foundation Infrastructure
+        id: check
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          
+          # Check if EKS cluster exists in state
+          if terraform state list | grep -q "module.eks.aws_eks_cluster"; then
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+            if [[ -n "$cluster_name" ]]; then
+              echo "✅ Foundation Platform found: $cluster_name"
+              echo "foundation-ready=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Foundation Platform cluster name not found"
+              echo "foundation-ready=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "❌ Foundation Platform not deployed. Deploy Workflow 1 first."
+            echo "foundation-ready=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  terraform-operation:
+    name: 🌐 Deploy Ingress + API Gateway Stack
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, check-foundation]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.check-foundation.outputs.foundation-ready == 'true'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      ambassador-hostname: ${{ steps.output.outputs.ambassador-hostname }}
+      cert-manager-ready: ${{ steps.output.outputs.cert-manager-ready }}
+      external-dns-ready: ${{ steps.output.outputs.external-dns-ready }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-IngressStack
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 📋 Terraform Init
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+
+      - name: ✅ Terraform Validate
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: terraform validate
+
+      - name: 📊 Terraform Plan
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          if [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
+            terraform plan -destroy -out=tfplan -target=module.ambassador -target=module.external_dns -target=module.cert_manager
+          else
+            terraform plan -out=tfplan -target=module.cert_manager -target=module.external_dns -target=module.ambassador
+          fi
+
+      - name: 🚀 Terraform Apply
+        if: needs.validate-inputs.outputs.action == 'apply'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          if [[ "${{ inputs.auto_approve }}" == "true" ]]; then
+            terraform apply tfplan
+          else
+            echo "❌ Manual approval required. Set auto_approve=true to proceed."
+            exit 1
+          fi
+
+      - name: 🗑️ Terraform Destroy
+        if: needs.validate-inputs.outputs.action == 'destroy'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        timeout-minutes: 45
+        run: terraform apply tfplan
+
+      - name: 📤 Get Stack Information
+        id: output
+        if: needs.validate-inputs.outputs.action == 'apply'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          # Get Ambassador Load Balancer hostname
+          ambassador_ready=$(terraform output -raw ambassador_ready 2>/dev/null || echo "false")
+          cert_manager_ready=$(terraform output -raw cert_manager_ready 2>/dev/null || echo "false")
+          external_dns_ready=$(terraform output -raw external_dns_ready 2>/dev/null || echo "false")
+          
+          echo "ambassador-hostname=Check kubectl get svc ambassador -n ambassador" >> $GITHUB_OUTPUT
+          echo "cert-manager-ready=$cert_manager_ready" >> $GITHUB_OUTPUT
+          echo "external-dns-ready=$external_dns_ready" >> $GITHUB_OUTPUT
+          
+          echo "✅ Ingress + API Gateway Stack deployed successfully!"
+          echo "🌐 cert-manager: $cert_manager_ready"
+          echo "🌍 external-dns: $external_dns_ready"
+          echo "🚀 Ambassador API Gateway: $ambassador_ready"
+
+      - name: 🔧 Configure kubectl and Verify Stack
+        if: needs.validate-inputs.outputs.action == 'apply'
+        run: |
+          cluster_name=$(cd terraform/environments/${{ needs.validate-inputs.outputs.environment }} && terraform output -raw cluster_name)
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
+            
+            echo "🔍 Verifying Ingress + API Gateway Stack..."
+            
+            # Check cert-manager
+            echo "📜 Checking cert-manager..."
+            kubectl get pods -n cert-manager
+            kubectl get clusterissuers
+            
+            # Check external-dns
+            echo "🌍 Checking external-dns..."
+            kubectl get pods -n external-dns
+            
+            # Check Ambassador
+            echo "🚀 Checking Ambassador..."
+            kubectl get pods -n ambassador
+            kubectl get svc ambassador -n ambassador
+            
+            echo "✅ Stack verification completed!"
+          fi
+
+  summary:
+    name: 📋 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, check-foundation, terraform-operation]
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 🌐 Ingress + API Gateway Stack Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action**: ${{ needs.validate-inputs.outputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ needs.validate-inputs.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Foundation Check**: ${{ needs.check-foundation.outputs.foundation-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ needs.terraform-operation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.check-foundation.outputs.foundation-ready }}" != "true" ]]; then
+            echo "### ❌ Foundation Platform Required" >> $GITHUB_STEP_SUMMARY
+            echo "Deploy **🏗️ Workflow 1: Foundation Platform** first before running this workflow." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.terraform-operation.result }}" == "success" ]]; then
+            if [[ "${{ needs.validate-inputs.outputs.action }}" == "apply" ]]; then
+              echo "### ✅ Ingress + API Gateway Stack Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Components Deployed:**" >> $GITHUB_STEP_SUMMARY
+              echo "- 📜 **cert-manager**: Automatic SSL certificates via Let's Encrypt" >> $GITHUB_STEP_SUMMARY
+              echo "- 🌍 **external-dns**: Automatic DNS management with Cloudflare" >> $GITHUB_STEP_SUMMARY
+              echo "- 🚀 **Ambassador**: API Gateway with AWS Network Load Balancer" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Resource Allocation:**" >> $GITHUB_STEP_SUMMARY
+              echo "- cert-manager: ~100m CPU, ~128Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- external-dns: ~100m CPU, ~128Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- Ambassador: ~1000m CPU, ~512Mi memory (production-ready)" >> $GITHUB_STEP_SUMMARY
+              echo "- **Total**: ~1.2 CPU, ~768Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- **Headroom**: ~2.8 CPU, ~1.2Gi memory remaining for future workflows" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Get Ambassador Load Balancer hostname: \`kubectl get svc ambassador -n ambassador\`" >> $GITHUB_STEP_SUMMARY
+              echo "2. Configure DNS records to point to the Load Balancer" >> $GITHUB_STEP_SUMMARY
+              echo "3. Deploy applications using Ambassador Mapping CRDs" >> $GITHUB_STEP_SUMMARY
+              echo "4. Ready for Workflows 3-7: LGTM, ArgoCD, Security, Istio, Data services" >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
+              echo "### ✅ Ingress Stack Destroyed Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "💰 API Gateway components have been cleaned up to save costs." >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.validate-inputs.outputs.action }}" == "plan" ]]; then
+              echo "### 📊 Plan Generated Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "Review the plan output above before proceeding with apply." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Operation Failed!" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi
