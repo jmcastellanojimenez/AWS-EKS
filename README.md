@@ -244,3 +244,132 @@ spec:
 2. Configure DNS records (or use external-dns automation)
 3. Deploy applications with Ambassador Mappings
 4. Ready for Workflows 3-7 deployment
+
+---
+
+## 📈 Workflow 3: LGTM Observability Stack
+
+**Purpose**: Deploy complete observability infrastructure (monitoring, logging, tracing) using the LGTM stack for EcoTrack microservices.
+
+### Prerequisites
+- **Workflow 1 must be deployed first** - Requires existing EKS cluster with IRSA
+- **Workflow 2 recommended** - Ambassador metrics integration available
+- Same GitHub secrets: `AWS_ROLE_ARN`, `AWS_REGION`, `AWS_ACCOUNT_ID`
+- Optional: `SLACK_WEBHOOK_URL` for alerting
+
+### Execution Model
+**Manual Only** - Same pattern as Workflows 1 & 2:
+- ❌ No automatic execution on code push/PR
+- ✅ Manual trigger via Actions tab → "Run workflow"
+- 🔒 Complete control over infrastructure changes
+
+### Components Deployed
+1. **📊 Prometheus** - Metrics collection and short-term storage
+   - Kubernetes service discovery with EcoTrack auto-discovery
+   - Resource allocation: ~400m CPU, ~1024Mi memory
+2. **💾 Mimir** - Long-term metrics storage with S3 backend
+   - Unlimited retention with lifecycle policies
+   - Resource allocation: ~300m CPU, ~512Mi memory
+3. **📝 Loki** - Log aggregation with structured querying
+   - Promtail for automatic log collection
+   - Resource allocation: ~200m CPU, ~512Mi memory
+4. **🔍 Tempo** - Distributed tracing (OpenTelemetry-compatible)
+   - Object storage only, no database required
+   - Resource allocation: ~150m CPU, ~256Mi memory
+5. **📈 Grafana** - Unified dashboards and alerting
+   - Pre-configured data sources and dashboards
+   - Resource allocation: ~100m CPU, ~256Mi memory
+6. **☁️ S3 Storage** - Unlimited data retention with lifecycle policies
+   - Separate buckets for metrics, logs, and traces
+   - Cost-optimized with IA/Glacier transitions
+
+### Usage
+
+#### 1. Plan Observability Stack
+```
+Workflow: 📈 Workflow 3: LGTM Observability Stack
+- action: plan
+- environment: dev
+```
+**Result**: Terraform plan for complete observability infrastructure
+
+#### 2. Deploy Observability Stack
+```
+Workflow: 📈 Workflow 3: LGTM Observability Stack
+- action: apply
+- environment: dev
+- auto_approve: true
+```
+**Result**: Complete LGTM stack with S3 storage and pre-configured dashboards
+
+#### 3. Destroy Observability Stack
+```
+Workflow: 📈 Workflow 3: LGTM Observability Stack
+- action: destroy
+- environment: dev
+- confirm_destroy: CONFIRM-DESTROY
+```
+**Result**: Clean removal of observability components (preserves Workflows 1 & 2)
+
+### Resource Planning
+**Total Workflow 3 allocation on t3.large nodes:**
+- **CPU**: ~1.15 cores (1,250m request, 2.6 cores limit)
+- **Memory**: ~2.6Gi (2,688Mi request, 5.1Gi limit)
+- **S3 Storage**: ~10GB/month (~$0.25/month with lifecycle policies)
+- **Remaining capacity**: ~1.65 cores CPU, ~0.5Gi memory per node
+- **Future workflows**: Ready for GitOps, Security, Istio, Data services
+- **EcoTrack microservices**: Space for 5 services with full observability
+
+### Pre-configured Dashboards
+- **Kubernetes Cluster Monitoring** - Node and cluster metrics
+- **Kubernetes Pods Monitoring** - Pod performance and health
+- **Spring Boot Applications** - JVM, HTTP, and custom business metrics
+- **Ambassador API Gateway** - Traffic, latency, and error rates (if Workflow 2 deployed)
+- **LGTM Stack Health** - Observability infrastructure monitoring
+
+### EcoTrack Integration
+**Automatic Discovery**: Prometheus automatically discovers microservices with annotations:
+```yaml
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/actuator/prometheus"
+  prometheus.io/port: "8080"
+```
+
+**Tracing Integration**: OpenTelemetry endpoint for distributed tracing:
+```yaml
+env:
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: "http://tempo.observability.svc.cluster.local:4317"
+```
+
+### Access Information
+```bash
+# Get Grafana password
+kubectl get secret -n observability grafana-credentials -o jsonpath='{.data.admin-password}' | base64 -d
+
+# Access Grafana
+kubectl port-forward -n observability svc/grafana 3000:80
+# URL: http://localhost:3000 (admin/<password>)
+
+# Verify S3 storage
+aws s3 ls | grep lgtm
+```
+
+### Alerting
+- **Pre-configured alerts** for infrastructure and application metrics
+- **Slack integration** via webhook (optional)
+- **Critical alerts**: High CPU/memory, pod crashes, service downtime, high error rates
+
+### Safety Features
+- Foundation Platform dependency check
+- Same destroy confirmation and approval protection as Workflows 1 & 2
+- Targeted deployment (only affects observability components)  
+- Shared Terraform state with existing workflows
+
+### Next Steps After Deployment
+1. Configure EcoTrack microservices with Prometheus annotations
+2. Add OpenTelemetry instrumentation for distributed tracing
+3. Set up custom Grafana alerts for business metrics
+4. Monitor resource usage and adjust as needed
+5. Ready for Workflows 4-7 deployment

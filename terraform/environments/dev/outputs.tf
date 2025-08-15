@@ -213,3 +213,119 @@ output "resource_allocation" {
     }
   }
 }
+
+# ===================================
+# Workflow 3: LGTM Observability Stack Outputs
+# ===================================
+
+output "observability_namespace" {
+  description = "Kubernetes namespace for observability components"
+  value       = try(module.lgtm_observability.namespace, "")
+}
+
+output "observability_ready" {
+  description = "Overall observability stack readiness"
+  value       = try(module.lgtm_observability.observability_ready, false)
+}
+
+# Component endpoints
+output "prometheus_endpoint" {
+  description = "Prometheus server endpoint for internal cluster access"
+  value       = try(module.lgtm_observability.prometheus_endpoint, "")
+}
+
+output "grafana_endpoint" {
+  description = "Grafana endpoint for internal cluster access"
+  value       = try(module.lgtm_observability.grafana_endpoint, "")
+}
+
+output "loki_endpoint" {
+  description = "Loki endpoint for internal cluster access"
+  value       = try(module.lgtm_observability.loki_endpoint, "")
+}
+
+output "tempo_endpoint" {
+  description = "Tempo endpoint for internal cluster access"
+  value       = try(module.lgtm_observability.tempo_endpoint, "")
+}
+
+output "mimir_endpoint" {
+  description = "Mimir endpoint for internal cluster access"
+  value       = try(module.lgtm_observability.mimir_endpoint, "")
+}
+
+# Access information
+output "grafana_admin_credentials" {
+  description = "Grafana admin access information"
+  value       = try(module.lgtm_observability.grafana_admin_credentials, {})
+  sensitive   = true
+}
+
+output "grafana_password_command" {
+  description = "Command to retrieve Grafana admin password"
+  value       = try(module.lgtm_observability.grafana_password_command, "")
+}
+
+# Resource utilization
+output "observability_resource_usage" {
+  description = "Resource usage summary for LGTM observability stack"
+  value = {
+    total_cpu_requests    = try(module.lgtm_observability.total_cpu_requests, "0m")
+    total_memory_requests = try(module.lgtm_observability.total_memory_requests, "0Mi")
+    remaining_capacity    = try(module.lgtm_observability.remaining_cluster_capacity, {})
+  }
+}
+
+# S3 storage information
+output "observability_storage" {
+  description = "S3 buckets for observability data"
+  value       = try(module.lgtm_observability.s3_buckets, {})
+}
+
+# Component status
+output "observability_components" {
+  description = "Status of individual observability components"
+  value = {
+    prometheus = try(module.lgtm_observability.prometheus_ready, "disabled")
+    grafana    = try(module.lgtm_observability.grafana_ready, "disabled")
+    loki       = try(module.lgtm_observability.loki_ready, "disabled")
+    tempo      = try(module.lgtm_observability.tempo_ready, "disabled")
+    mimir      = try(module.lgtm_observability.mimir_ready, "disabled")
+  }
+}
+
+# Service accounts with IRSA
+output "observability_service_accounts" {
+  description = "Service accounts with IRSA configuration"
+  value       = try(module.lgtm_observability.service_accounts, {})
+}
+
+# Data sources configured in Grafana
+output "grafana_data_sources" {
+  description = "Data sources automatically configured in Grafana"
+  value       = try(module.lgtm_observability.data_sources_configured, [])
+}
+
+# Microservices integration guide
+output "microservices_integration" {
+  description = "Integration guide for EcoTrack microservices"
+  value       = try(module.lgtm_observability.microservices_integration, {})
+}
+
+# Post-deployment commands
+output "observability_commands" {
+  description = "Commands to verify and access the observability stack"
+  value       = try(module.lgtm_observability.post_deployment_commands, {})
+}
+
+# Dashboard URLs
+output "grafana_dashboards" {
+  description = "Grafana dashboard URLs after port-forward"
+  value       = try(module.lgtm_observability.dashboard_urls, {})
+}
+
+# Alerting information
+output "alerting_info" {
+  description = "Alerting configuration information"
+  value       = try(module.lgtm_observability.alerting_info, {})
+}

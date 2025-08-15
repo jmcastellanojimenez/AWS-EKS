@@ -193,3 +193,224 @@ variable "cors_origins" {
   default     = ["*"]
 }
 
+# ===================================
+# Workflow 3: LGTM Observability Stack Variables
+# ===================================
+
+variable "observability_namespace" {
+  description = "Kubernetes namespace for observability components"
+  type        = string
+  default     = "observability"
+}
+
+# Grafana configuration
+variable "grafana_admin_password" {
+  description = "Grafana admin password"
+  type        = string
+  default     = "admin123!"
+  sensitive   = true
+}
+
+variable "grafana_domain" {
+  description = "Domain for Grafana access"
+  type        = string
+  default     = ""
+}
+
+variable "enable_grafana_alerts" {
+  description = "Enable Grafana alerting"
+  type        = bool
+  default     = true
+}
+
+variable "slack_webhook_url" {
+  description = "Slack webhook URL for alerts"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# Component toggles
+variable "enable_prometheus" {
+  description = "Enable Prometheus for metrics collection"
+  type        = bool
+  default     = true
+}
+
+variable "enable_mimir" {
+  description = "Enable Mimir for long-term metrics storage"
+  type        = bool
+  default     = true
+}
+
+variable "enable_loki" {
+  description = "Enable Loki for log aggregation"
+  type        = bool
+  default     = true
+}
+
+variable "enable_tempo" {
+  description = "Enable Tempo for distributed tracing"
+  type        = bool
+  default     = true
+}
+
+# Storage configuration
+variable "prometheus_storage_size" {
+  description = "Prometheus storage size"
+  type        = string
+  default     = "20Gi"
+}
+
+variable "grafana_storage_size" {
+  description = "Grafana storage size"
+  type        = string
+  default     = "10Gi"
+}
+
+variable "prometheus_retention" {
+  description = "Prometheus data retention period"
+  type        = string
+  default     = "7d"
+}
+
+# S3 lifecycle configuration
+variable "s3_lifecycle_enabled" {
+  description = "Enable S3 lifecycle policies"
+  type        = bool
+  default     = true
+}
+
+variable "s3_transition_days" {
+  description = "Days before transitioning to cold storage"
+  type        = number
+  default     = 7
+}
+
+variable "s3_expiration_days" {
+  description = "Days before object expiration"
+  type        = number
+  default     = 365
+}
+
+# Resource configuration
+variable "prometheus_resources" {
+  description = "Prometheus resource requests and limits"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "400m"
+      memory = "1024Mi"
+    }
+    limits = {
+      cpu    = "800m"
+      memory = "2048Mi"
+    }
+  }
+}
+
+variable "grafana_resources" {
+  description = "Grafana resource requests and limits"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "100m"
+      memory = "256Mi"
+    }
+    limits = {
+      cpu    = "200m"
+      memory = "512Mi"
+    }
+  }
+}
+
+variable "mimir_resources" {
+  description = "Mimir resource requests and limits"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "300m"
+      memory = "512Mi"
+    }
+    limits = {
+      cpu    = "600m"
+      memory = "1024Mi"
+    }
+  }
+}
+
+variable "loki_resources" {
+  description = "Loki resource requests and limits"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "200m"
+      memory = "512Mi"
+    }
+    limits = {
+      cpu    = "400m"
+      memory = "1024Mi"
+    }
+  }
+}
+
+variable "tempo_resources" {
+  description = "Tempo resource requests and limits"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "150m"
+      memory = "256Mi"
+    }
+    limits = {
+      cpu    = "300m"
+      memory = "512Mi"
+    }
+  }
+}
+
