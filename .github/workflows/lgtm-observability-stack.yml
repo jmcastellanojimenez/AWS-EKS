@@ -1,4 +1,4 @@
-name: 📈 Workflow 3: LGTM Observability Stack
+name: 📈 LGTM Observability Stack
 
 # MANUAL EXECUTION ONLY - No automatic triggers on push/PR
 on:
