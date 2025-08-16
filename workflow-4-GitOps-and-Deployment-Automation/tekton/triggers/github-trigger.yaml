@@ -1,0 +1,221 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-webhook-listener
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  serviceAccountName: tekton-build-sa
+  triggers:
+    - name: github-push-trigger
+      interceptors:
+        - name: "github"
+          ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secretToken
+            - name: "eventTypes"
+              value: ["push", "pull_request"]
+        - name: "cel"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: |
+                body.ref in ['refs/heads/main', 'refs/heads/develop'] ||
+                body.pull_request.base.ref in ['main', 'develop']
+      bindings:
+        - ref: github-push-binding
+        - name: service-name
+          value: $(body.repository.name)
+        - name: git-revision
+          value: $(body.head_commit.id)
+        - name: git-commit-message
+          value: $(body.head_commit.message)
+        - name: git-commit-author
+          value: $(body.head_commit.author.name)
+      template:
+        ref: microservice-pipeline-template
+
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-push-binding
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: git-repo-url
+      value: $(body.repository.clone_url)
+    - name: git-repo-name
+      value: $(body.repository.name)
+    - name: git-revision
+      value: $(body.head_commit.id)
+    - name: git-commit-message
+      value: $(body.head_commit.message)
+    - name: git-commit-author
+      value: $(body.head_commit.author.name)
+    - name: git-ref
+      value: $(body.ref)
+    - name: event-type
+      value: $(header.X-Github-Event)
+
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: microservice-pipeline-template
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: git-repo-url
+      description: The git repository URL
+    - name: git-repo-name  
+      description: The git repository name
+    - name: git-revision
+      description: The git revision
+      default: main
+    - name: git-commit-message
+      description: The git commit message
+      default: ""
+    - name: git-commit-author
+      description: The git commit author
+      default: ""
+    - name: git-ref
+      description: The git reference
+      default: refs/heads/main
+    - name: event-type
+      description: The GitHub event type
+      default: push
+    - name: service-name
+      description: Name of the microservice
+      default: "$(tt.params.git-repo-name)"
+    
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: $(tt.params.git-repo-name)-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/name: $(tt.params.git-repo-name)
+          app.kubernetes.io/instance: $(tt.params.git-revision)
+          tekton.dev/pipeline: microservice-pipeline
+          git.repo: $(tt.params.git-repo-name)
+          git.revision: $(tt.params.git-revision)
+          git.author: $(tt.params.git-commit-author)
+      spec:
+        serviceAccountName: tekton-build-sa
+        pipelineRef:
+          name: microservice-pipeline
+        params:
+          - name: SOURCE_REPO_URL
+            value: $(tt.params.git-repo-url)
+          - name: SOURCE_REVISION
+            value: $(tt.params.git-revision)
+          - name: SERVICE_NAME
+            value: $(tt.params.service-name)
+          - name: IMAGE_REPOSITORY
+            value: "ecotrack/$(tt.params.service-name)"
+          - name: IMAGE_TAG
+            value: "$(tt.params.git-revision)"
+          - name: MANIFEST_REPO_URL
+            value: "https://github.com/your-org/ecotrack-manifests.git"
+          - name: ENVIRONMENT
+            value: "dev"
+          - name: JAVA_VERSION
+            value: "17"
+          - name: ENABLE_NATIVE_BUILD
+            value: "false"
+          - name: RUN_TESTS
+            value: "true"
+          - name: SECURITY_SCAN_ENABLED
+            value: "true"
+          - name: AUTO_DEPLOY
+            value: "true"
+        workspaces:
+          - name: source-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+                storageClassName: gp3
+          - name: cache-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 5Gi
+                storageClassName: gp3
+          - name: manifest-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+                storageClassName: gp3
+        timeout: "1h0m0s"
+
+---
+# Service to expose the EventListener
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-webhook-listener
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: github-webhook-listener
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/managed-by: EventListener
+    app.kubernetes.io/part-of: Triggers
+    eventlistener: github-webhook-listener
+
+---
+# Ingress to expose webhooks via Ambassador
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: github-webhook-listener
+  namespace: tekton-pipelines
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: getambassador.io/v3alpha1
+      kind: Mapping
+      name: tekton-webhooks
+      prefix: /webhooks/
+      service: github-webhook-listener:8080
+      rewrite: ""
+      timeout_ms: 30000
+      headers:
+        x-forwarded-proto: https
+spec:
+  ingressClassName: ambassador
+  rules:
+    - host: your-domain.com  # Replace with your actual domain
+      http:
+        paths:
+          - path: /webhooks
+            pathType: Prefix
+            backend:
+              service:
+                name: github-webhook-listener
+                port:
+                  number: 8080

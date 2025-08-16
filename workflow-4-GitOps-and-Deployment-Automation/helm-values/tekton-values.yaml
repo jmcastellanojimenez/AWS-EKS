@@ -1,0 +1,365 @@
+# Tekton Production Helm Values
+# Integrates with LGTM observability stack and Ambassador ingress
+
+# Tekton Pipelines Configuration
+tektonPipelines:
+  # Feature flags for enhanced functionality
+  featureFlags:
+    enable-tekton-oci-bundles: "true"
+    enable-custom-tasks: "true" 
+    enable-step-actions: "true"
+    enable-task-resource-limits: "true"
+    require-git-ssh-secret-known-hosts: "false"
+    enable-api-fields: "beta"
+    
+  # Default configuration
+  config:
+    defaults:
+      default-timeout-minutes: "60"
+      default-service-account: "tekton-build-sa"
+      default-managed-by-label-value: "tekton-pipelines"
+      default-pod-template: |
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          fsGroup: 65532
+        nodeSelector:
+          kubernetes.io/os: linux
+        tolerations:
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
+    
+    # Artifact and PVC configuration
+    artifact-bucket:
+      location: "s3://eks-learning-lab-tekton-artifacts"
+      bucket.service.account.secret.name: "tekton-build-sa"
+      bucket.service.account.secret.key: "serviceaccount"
+      bucket.service.account.field.name: "service-account"
+      
+    artifact-pvc:
+      size: "10Gi"
+      storageClassName: "gp3"
+
+  # Controller configuration
+  controller:
+    replicas: 1
+    
+    # Resource requirements
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+      limits:
+        cpu: 1000m
+        memory: 4Gi
+    
+    # Metrics configuration for Prometheus
+    metrics:
+      enabled: true
+      port: 9090
+      service:
+        type: ClusterIP
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9090"
+          prometheus.io/path: "/metrics"
+      serviceMonitor:
+        enabled: true
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/name: tekton-pipelines-controller
+          app.kubernetes.io/part-of: tekton-pipelines
+          prometheus.io/service-monitor: "true"
+        interval: 30s
+        
+    # Pod configuration
+    nodeSelector:
+      kubernetes.io/os: linux
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+    
+    # Pod disruption budget
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+      
+  # Webhook configuration  
+  webhook:
+    replicas: 1
+    
+    # Resource requirements
+    resources:
+      requests:
+        cpu: 100m
+        memory: 20Mi
+      limits:
+        cpu: 500m
+        memory: 500Mi
+    
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+    
+    # Pod disruption budget
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+
+# Tekton Triggers Configuration  
+tektonTriggers:
+  # Controller configuration
+  controller:
+    replicas: 1
+    
+    # Resource requirements
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+      limits:
+        cpu: 500m
+        memory: 500Mi
+    
+    # Metrics configuration for Prometheus
+    metrics:
+      enabled: true
+      port: 9000
+      service:
+        type: ClusterIP
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9000"
+          prometheus.io/path: "/metrics"
+      serviceMonitor:
+        enabled: true
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/name: tekton-triggers-controller
+          app.kubernetes.io/part-of: tekton-triggers
+          prometheus.io/service-monitor: "true"
+        interval: 30s
+        
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+      
+  # Webhook configuration
+  webhook:
+    replicas: 1
+    
+    # Service configuration 
+    service:
+      type: ClusterIP
+      port: 8080
+      
+    # Resource requirements
+    resources:
+      requests:
+        cpu: 100m
+        memory: 20Mi
+      limits:
+        cpu: 500m
+        memory: 500Mi
+        
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+      
+  # Core Interceptors configuration
+  coreInterceptors:
+    replicas: 1
+    
+    # Resource requirements
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+      limits:
+        cpu: 500m
+        memory: 500Mi
+        
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+
+# Tekton Dashboard Configuration
+tektonDashboard:
+  enabled: true
+  
+  # Dashboard configuration
+  dashboard:
+    replicas: 1
+    
+    # Service configuration
+    service:
+      type: ClusterIP
+      port: 9097
+      annotations:
+        prometheus.io/scrape: "false"
+    
+    # Ingress configuration via Ambassador
+    ingress:
+      enabled: true
+      className: ambassador
+      annotations:
+        getambassador.io/config: |
+          ---
+          apiVersion: getambassador.io/v3alpha1
+          kind: Mapping
+          name: tekton-dashboard
+          prefix: /
+          service: tekton-dashboard:9097
+          host: tekton.your-domain.com
+          tls: tekton-dashboard-tls
+          timeout_ms: 30000
+          headers:
+            x-forwarded-proto: https
+      hosts:
+        - host: tekton.your-domain.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: tekton-dashboard-tls
+          hosts:
+            - tekton.your-domain.com
+    
+    # Resource requirements
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+      limits:
+        cpu: 500m
+        memory: 500Mi
+        
+    # Security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      fsGroup: 65532
+      
+    # Environment variables
+    env:
+      - name: INSTALLED_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: READ_ONLY
+        value: "false"
+      - name: CSRF_SECURE_COOKIE
+        value: "true"
+        
+  # RBAC configuration
+  rbac:
+    create: true
+    
+  # Service Account  
+  serviceAccount:
+    create: true
+    name: tekton-dashboard
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/eks-learning-lab-dev-tekton-role"
+
+# Global pod security standards
+podSecurityStandards:
+  enforceLevel: "baseline"
+  warnLevel: "baseline"
+  auditLevel: "baseline"
+
+# Global resource labels
+commonLabels:
+  app.kubernetes.io/part-of: "tekton"
+  app.kubernetes.io/managed-by: "helm"
+  environment: "production"
+  
+# Global annotations for monitoring
+commonAnnotations:
+  prometheus.io/scrape: "true"
+  
+# Node selector for all components
+nodeSelector:
+  kubernetes.io/os: linux
+
+# Tolerations for pod scheduling
+tolerations: []
+
+# Affinity rules for pod placement
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: tekton-pipelines-controller
+        topologyKey: kubernetes.io/hostname
+
+# Priority class for system-critical workloads
+priorityClassName: "system-cluster-critical"
+
+# Network policies (optional)
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+    from:
+      - namespaceSelector:
+          matchLabels:
+            name: ambassador
+      - namespaceSelector:
+          matchLabels:
+            name: observability
+      - namespaceSelector:
+          matchLabels:
+            name: argocd
+  egress:
+    enabled: true
+    to:
+      - namespaceSelector: {}
+    ports:
+      - protocol: TCP
+        port: 443
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 53
+      - protocol: UDP
+        port: 53
+
+# Service monitors for Prometheus scraping
+serviceMonitor:
+  enabled: true
+  namespace: tekton-pipelines
+  labels:
+    prometheus.io/service-monitor: "true"
+  endpoints:
+    - port: http-metrics
+      interval: 30s
+      path: /metrics
+      
+# Grafana dashboard provisioning
+grafanaDashboard:
+  enabled: true
+  labels:
+    grafana_dashboard: "tekton"
+  annotations:
+    grafana.com/dashboard-folder: "Tekton"

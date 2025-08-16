@@ -1,0 +1,257 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-build-sa
+  namespace: tekton-pipelines
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/eks-learning-lab-dev-tekton-role
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tekton-build-role
+rules:
+# Core resources for pipeline execution
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "services", "endpoints", "persistentvolumeclaims", "configmaps", "secrets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# For creating workspaces and volumes
+- apiGroups: [""]
+  resources: ["persistentvolumes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# Apps resources for deployments
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# Extensions for ingresses
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# Tekton CRDs
+- apiGroups: ["tekton.dev"]
+  resources: ["tasks", "taskruns", "pipelines", "pipelineruns", "pipelineresources"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# Triggers CRDs
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners", "triggerbindings", "triggertemplates", "interceptors"]
+  verbs: ["get", "list", "create", "update", "patch", "delete", "watch"]
+
+# For ArgoCD integration
+- apiGroups: ["argoproj.io"]
+  resources: ["applications", "appprojects", "applicationsets"]
+  verbs: ["get", "list", "create", "update", "patch", "watch"]
+
+# Custom resources for service mesh integration
+- apiGroups: ["networking.istio.io"]
+  resources: ["virtualservices", "destinationrules", "gateways"]
+  verbs: ["get", "list", "create", "update", "patch", "watch"]
+
+# For security context constraints (if needed)
+- apiGroups: ["security.openshift.io"]
+  resources: ["securitycontextconstraints"]
+  verbs: ["use"]
+  resourceNames: ["anyuid", "privileged"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-build-binding
+subjects:
+- kind: ServiceAccount
+  name: tekton-build-sa
+  namespace: tekton-pipelines
+roleRef:
+  kind: ClusterRole
+  name: tekton-build-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for Tekton Triggers EventListener
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: tekton-pipelines
+  name: tekton-triggers-eventlistener-roles
+rules:
+# EventListener needs to fetch the trigger resources
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners", "triggerbindings", "triggertemplates", "interceptors"]
+  verbs: ["get", "list", "watch"]
+# EventListener needs to create PipelineRuns and TaskRuns
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "taskruns", "pipelines", "tasks"]
+  verbs: ["create"]
+# EventListener needs to read configuration
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: tekton-pipelines
+  name: tekton-triggers-eventlistener-binding
+subjects:
+- kind: ServiceAccount
+  name: tekton-build-sa
+  namespace: tekton-pipelines
+roleRef:
+  kind: Role
+  name: tekton-triggers-eventlistener-roles
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role for accessing other namespaces (for cross-namespace deployments)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tekton-cross-namespace-role
+rules:
+# Allow creating resources in application namespaces
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "create", "update", "patch"]
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-cross-namespace-binding
+subjects:
+- kind: ServiceAccount
+  name: tekton-build-sa
+  namespace: tekton-pipelines
+roleRef:
+  kind: ClusterRole
+  name: tekton-cross-namespace-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Service Account for ArgoCD integration
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-tekton-sa
+  namespace: tekton-pipelines
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/eks-learning-lab-dev-argocd-role
+
+---
+# Role for ArgoCD to trigger Tekton pipelines
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: tekton-pipelines
+  name: argocd-tekton-trigger-role
+rules:
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "taskruns"]
+  verbs: ["create", "get", "list", "watch"]
+- apiGroups: ["triggers.tekton.dev"]
+  resources: ["eventlisteners"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: tekton-pipelines
+  name: argocd-tekton-trigger-binding
+subjects:
+- kind: ServiceAccount
+  name: argocd-tekton-sa
+  namespace: tekton-pipelines
+roleRef:
+  kind: Role
+  name: argocd-tekton-trigger-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Pod Security Policy (if PSPs are enabled)
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: tekton-build-psp
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'docker/default,runtime/default'
+    apparmor.security.beta.kubernetes.io/allowedProfileNames: 'runtime/default'
+    seccomp.security.alpha.kubernetes.io/defaultProfileName:  'runtime/default'
+    apparmor.security.beta.kubernetes.io/defaultProfileName:  'runtime/default'
+spec:
+  privileged: true  # Required for Docker builds with Kaniko
+  allowPrivilegeEscalation: true
+  requiredDropCapabilities:
+    - KILL
+    - MKNOD
+    - SETUID
+    - SETGID
+  allowedCapabilities:
+    - SETPCAP
+    - NET_BIND_SERVICE
+    - NET_RAW
+    - SYS_CHROOT
+    - MKNOD
+    - AUDIT_WRITE
+    - SETFCAP
+  runAsUser:
+    rule: 'RunAsAny'
+  runAsGroup:
+    rule: 'RunAsAny'
+  seLinux:
+    rule: 'RunAsAny'
+  supplementalGroups:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'RunAsAny'
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-build-psp-user
+  namespace: tekton-pipelines
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs:     ['use']
+  resourceNames:
+  - tekton-build-psp
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-build-psp-binding
+  namespace: tekton-pipelines
+roleRef:
+  kind: Role
+  name: tekton-build-psp-user
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: tekton-build-sa
+  namespace: tekton-pipelines
+- kind: ServiceAccount
+  name: argocd-tekton-sa
+  namespace: tekton-pipelines

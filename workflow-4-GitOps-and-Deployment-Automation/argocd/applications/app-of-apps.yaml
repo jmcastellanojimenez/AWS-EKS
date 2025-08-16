@@ -1,0 +1,275 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-app-of-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecotrack-app-of-apps
+    app.kubernetes.io/part-of: ecotrack
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/your-org/ecotrack-manifests
+    targetRevision: main
+    path: argocd/applications
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-user-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/part-of: ecotrack
+    environment: development
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/your-org/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/user-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  # Health checks
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /spec/replicas
+    
+  # Resource customizations
+  info:
+  - name: 'Service URL'
+    value: 'https://api-dev.ecotrack.com/user'
+  - name: 'Logs'
+    value: 'https://grafana.ecotrack.com/d/user-service'
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-tracking-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: tracking-service
+    app.kubernetes.io/part-of: ecotrack
+    environment: development
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/your-org/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/tracking-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+  - name: 'Service URL'
+    value: 'https://api-dev.ecotrack.com/tracking'
+  - name: 'Logs'
+    value: 'https://grafana.ecotrack.com/d/tracking-service'
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-analytics-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: analytics-service
+    app.kubernetes.io/part-of: ecotrack
+    environment: development
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/your-org/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/analytics-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+  - name: 'Service URL'
+    value: 'https://api-dev.ecotrack.com/analytics'
+  - name: 'Logs'
+    value: 'https://grafana.ecotrack.com/d/analytics-service'
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-notification-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: ecotrack
+    environment: development
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/your-org/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/notification-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+  - name: 'Service URL'
+    value: 'https://api-dev.ecotrack.com/notifications'
+  - name: 'Logs'
+    value: 'https://grafana.ecotrack.com/d/notification-service'
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-reporting-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: reporting-service
+    app.kubernetes.io/part-of: ecotrack
+    environment: development
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/your-org/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/reporting-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+  - name: 'Service URL'
+    value: 'https://api-dev.ecotrack.com/reports'
+  - name: 'Logs'
+    value: 'https://grafana.ecotrack.com/d/reporting-service'
