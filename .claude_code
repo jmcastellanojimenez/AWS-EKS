@@ -1,5 +1,5 @@
-# Claude Code Configuration for EKS Platform Workflows
-# Place this file in your repository root directory
+# Claude Code Configuration for EKS Platform Workflows.
+# Place this file in your repository root directory.
 
 [project]
 name = "EKS Platform Workflows"
