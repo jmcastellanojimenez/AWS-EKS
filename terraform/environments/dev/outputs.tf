@@ -35,7 +35,7 @@ output "ambassador_load_balancer" {
 # Observability Outputs
 output "grafana_url" {
   description = "Grafana dashboard URL"
-  value       = module.observability.grafana_url
+  value       = module.lgtm_observability.grafana_url
 }
 
 output "grafana_admin_password" {
@@ -46,7 +46,7 @@ output "grafana_admin_password" {
 
 output "prometheus_url" {
   description = "Prometheus URL"
-  value       = module.observability.prometheus_url
+  value       = module.lgtm_observability.prometheus_url
 }
 
 # GitOps Outputs
@@ -93,7 +93,7 @@ output "openbao_url" {
 output "service_endpoints" {
   description = "All service endpoints"
   value = {
-    grafana    = module.observability.grafana_url
+    grafana    = module.lgtm_observability.grafana_url
     argocd     = "https://${var.domain_name}/argocd"
     kiali      = module.service_mesh.kiali_url
     openbao    = module.security.openbao_url

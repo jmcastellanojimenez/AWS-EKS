@@ -78,7 +78,55 @@ module "foundation" {
   kubernetes_version       = var.kubernetes_version
 }
 
-# Note: IRSA roles and S3 buckets are handled by the foundation module
+# IAM roles for observability components
+module "observability_irsa_roles" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.0"
+
+  for_each = toset(["prometheus", "loki", "tempo"])
+
+  role_name = "${local.cluster_name}-${each.key}"
+
+  role_policy_arns = {
+    policy = aws_iam_policy.observability_s3_policy[each.key].arn
+  }
+
+  oidc_providers = {
+    ex = {
+      provider_arn               = module.foundation.oidc_provider_arn
+      namespace_service_accounts = ["observability:${each.key}"]
+    }
+  }
+
+  depends_on = [module.foundation]
+}
+
+# S3 access policy for observability components
+resource "aws_iam_policy" "observability_s3_policy" {
+  for_each = toset(["prometheus", "loki", "tempo"])
+  
+  name        = "${local.cluster_name}-${each.key}-s3-policy"
+  description = "S3 access policy for ${each.key}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          module.foundation.observability_s3_buckets[each.key].arn,
+          "${module.foundation.observability_s3_buckets[each.key].arn}/*"
+        ]
+      }
+    ]
+  })
+}
 
 # Workflow 2: Ingress + API Gateway
 module "ingress" {
@@ -106,9 +154,19 @@ module "lgtm_observability" {
   domain_name      = var.domain_name
   aws_region       = var.aws_region
 
+  # S3 buckets
+  prometheus_s3_bucket = module.foundation.observability_s3_buckets["prometheus"].bucket
+  loki_s3_bucket      = module.foundation.observability_s3_buckets["loki"].bucket
+  tempo_s3_bucket     = module.foundation.observability_s3_buckets["tempo"].bucket
+
+  # IRSA roles
+  mimir_irsa_role_arn = module.observability_irsa_roles["prometheus"].iam_role_arn
+  loki_irsa_role_arn  = module.observability_irsa_roles["loki"].iam_role_arn
+  tempo_irsa_role_arn = module.observability_irsa_roles["tempo"].iam_role_arn
+
   grafana_admin_password = var.grafana_admin_password
 
-  depends_on = [module.foundation]
+  depends_on = [module.foundation, module.observability_irsa_roles]
 }
 
 # Workflow 4: GitOps & CI/CD
