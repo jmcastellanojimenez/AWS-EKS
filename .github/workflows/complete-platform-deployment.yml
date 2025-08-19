@@ -1,0 +1,480 @@
+name: 🚀 Complete Platform Deployment
+
+# MANUAL EXECUTION ONLY - Deploy all 7 workflows in sequence
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      workflows_to_deploy:
+        description: 'Workflows to Deploy (comma-separated: 1,2,3,4,5,6,7)'
+        required: true
+        default: '1,2,3,4,5,6,7'
+        type: string
+      confirm_deployment:
+        description: 'Type "DEPLOY-ALL" to confirm complete platform deployment'
+        required: true
+        type: string
+      skip_validation:
+        description: 'Skip prerequisite validation (use with caution)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Deployment Request
+    runs-on: ubuntu-latest
+    outputs:
+      should-proceed: ${{ steps.validate.outputs.should-proceed }}
+      workflows: ${{ steps.validate.outputs.workflows }}
+      environment: ${{ steps.validate.outputs.environment }}
+    steps:
+      - name: Validate Inputs
+        id: validate
+        run: |
+          # Validate confirmation
+          if [[ "${{ inputs.confirm_deployment }}" != "DEPLOY-ALL" ]]; then
+            echo "❌ Complete platform deployment requires 'DEPLOY-ALL' confirmation"
+            echo "should-proceed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Parse and validate workflows
+          workflows="${{ inputs.workflows_to_deploy }}"
+          workflows=$(echo "$workflows" | tr -d ' ')
+          
+          echo "✅ Deployment confirmed for environment: ${{ inputs.environment }}"
+          echo "✅ Workflows to deploy: $workflows"
+          
+          echo "should-proceed=true" >> $GITHUB_OUTPUT
+          echo "workflows=$workflows" >> $GITHUB_OUTPUT
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+
+  workflow-1-foundation:
+    name: 🏗️ Workflow 1 - Foundation Platform
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '1')
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+      cluster-name: ${{ steps.deploy.outputs.cluster-name }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy Foundation Platform
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "🏗️ Deploying Foundation Platform..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.vpc -target=module.iam -target=module.eks
+          terraform apply -auto-approve tfplan
+          
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          echo "cluster-name=$cluster_name" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ Foundation Platform deployed successfully!"
+
+  workflow-2-ingress:
+    name: 🌐 Workflow 2 - Ingress + API Gateway
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '2') && needs.workflow-1-foundation.outputs.status == 'success'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy Ingress + API Gateway
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "🌐 Deploying Ingress + API Gateway Stack..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.cert_manager -target=module.external_dns -target=module.ambassador
+          terraform apply -auto-approve tfplan
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ Ingress + API Gateway deployed successfully!"
+
+  workflow-3-observability:
+    name: 📈 Workflow 3 - LGTM Observability
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '3') && needs.workflow-1-foundation.outputs.status == 'success'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy LGTM Observability
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "📈 Deploying LGTM Observability Stack..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.lgtm_observability
+          terraform apply -auto-approve tfplan
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ LGTM Observability deployed successfully!"
+
+  workflow-4-gitops:
+    name: 🔄 Workflow 4 - GitOps & Deployment Automation
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '4') && needs.workflow-1-foundation.outputs.status == 'success'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy GitOps & Deployment Automation
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "🔄 Deploying GitOps & Deployment Automation..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.gitops
+          terraform apply -auto-approve tfplan
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ GitOps & Deployment Automation deployed successfully!"
+
+  workflow-5-security:
+    name: 🔐 Workflow 5 - Security Foundation
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '5') && needs.workflow-1-foundation.outputs.status == 'success'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy Security Foundation
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "🔐 Deploying Security Foundation..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.security
+          terraform apply -auto-approve tfplan
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ Security Foundation deployed successfully!"
+
+  workflow-6-service-mesh:
+    name: 🛡️ Workflow 6 - Service Mesh
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-5-security]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '6') && needs.workflow-1-foundation.outputs.status == 'success'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy Service Mesh
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "🛡️ Deploying Service Mesh..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.service_mesh
+          terraform apply -auto-approve tfplan
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ Service Mesh deployed successfully!"
+
+  workflow-7-data-services:
+    name: 📊 Workflow 7 - Data Services
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-3-observability, workflow-5-security, workflow-6-service-mesh]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '7') && needs.workflow-1-foundation.outputs.status == 'success'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🚀 Deploy Data Services
+        id: deploy
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "📊 Deploying Data Services..."
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform plan -out=tfplan -target=module.data_services
+          terraform apply -auto-approve tfplan
+          
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ Data Services deployed successfully!"
+
+  platform-verification:
+    name: 🔍 Platform Verification
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops, workflow-5-security, workflow-6-service-mesh, workflow-7-data-services]
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CompleteDeployment
+
+      - name: 🔧 Configure kubectl
+        run: |
+          cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
+            echo "✅ kubectl configured for cluster: $cluster_name"
+          fi
+
+      - name: 🔍 Comprehensive Platform Verification
+        run: |
+          echo "🔍 Verifying Complete Platform Deployment..."
+          
+          # Check cluster health
+          echo "🏗️ Checking Cluster Health..."
+          kubectl get nodes
+          kubectl get pods -A | grep -E "(Running|Completed)" | wc -l
+          
+          # Check each workflow deployment
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '1') }}" == "true" ]]; then
+            echo "🏗️ Verifying Foundation Platform..."
+            kubectl get nodes --no-headers | wc -l
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '2') }}" == "true" ]]; then
+            echo "🌐 Verifying Ingress + API Gateway..."
+            kubectl get pods -n cert-manager
+            kubectl get pods -n external-dns
+            kubectl get pods -n ambassador
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '3') }}" == "true" ]]; then
+            echo "📈 Verifying LGTM Observability..."
+            kubectl get pods -n observability
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '4') }}" == "true" ]]; then
+            echo "🔄 Verifying GitOps & Deployment Automation..."
+            kubectl get pods -n argocd
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '5') }}" == "true" ]]; then
+            echo "🔐 Verifying Security Foundation..."
+            kubectl get pods -n security
+            kubectl get pods -n gatekeeper-system
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '6') }}" == "true" ]]; then
+            echo "🛡️ Verifying Service Mesh..."
+            kubectl get pods -n istio-system
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '7') }}" == "true" ]]; then
+            echo "📊 Verifying Data Services..."
+            kubectl get pods -n data-services
+          fi
+          
+          echo "✅ Platform verification completed!"
+
+  deployment-summary:
+    name: 📋 Complete Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops, workflow-5-security, workflow-6-service-mesh, workflow-7-data-services, platform-verification]
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true'
+    steps:
+      - name: Generate Complete Platform Summary
+        run: |
+          echo "## 🚀 Complete EKS Platform Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ needs.validate-inputs.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflows Requested**: ${{ needs.validate-inputs.outputs.workflows }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 📊 Workflow Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '1') }}" == "true" ]]; then
+            echo "- 🏗️ **Workflow 1 - Foundation Platform**: ${{ needs.workflow-1-foundation.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '2') }}" == "true" ]]; then
+            echo "- 🌐 **Workflow 2 - Ingress + API Gateway**: ${{ needs.workflow-2-ingress.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '3') }}" == "true" ]]; then
+            echo "- 📈 **Workflow 3 - LGTM Observability**: ${{ needs.workflow-3-observability.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '4') }}" == "true" ]]; then
+            echo "- 🔄 **Workflow 4 - GitOps & Deployment Automation**: ${{ needs.workflow-4-gitops.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '5') }}" == "true" ]]; then
+            echo "- 🔐 **Workflow 5 - Security Foundation**: ${{ needs.workflow-5-security.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '6') }}" == "true" ]]; then
+            echo "- 🛡️ **Workflow 6 - Service Mesh**: ${{ needs.workflow-6-service-mesh.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '7') }}" == "true" ]]; then
+            echo "- 📊 **Workflow 7 - Data Services**: ${{ needs.workflow-7-data-services.result }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Platform Ready!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Your complete EKS platform is now deployed and ready for the EcoTrack microservices!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Configure kubectl: \`aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ needs.workflow-1-foundation.outputs.cluster-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Access Grafana for monitoring" >> $GITHUB_STEP_SUMMARY
+          echo "3. Access ArgoCD for GitOps deployments" >> $GITHUB_STEP_SUMMARY
+          echo "4. Deploy EcoTrack microservices using the platform" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Platform Capabilities:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Enterprise-grade Kubernetes cluster" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Complete observability with LGTM stack" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GitOps-based deployment automation" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Zero-trust security with service mesh" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Production-ready data services" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Cost-optimized with spot instances" >> $GITHUB_STEP_SUMMARY
+
+      - name: Slack Notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#platform-deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,135 +1,314 @@
+# Development Environment Configuration
 terraform {
-  required_version = ">= 1.3"
-
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
+      version = "~> 5.0"
     }
-    tls = {
-      source  = "hashicorp/tls"
-      version = ">= 4.0"
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.23"
     }
-  }
-
-  backend "s3" {
-    key                  = "dev/terraform.tfstate"
-    workspace_key_prefix = "environments"
-    encrypt              = true
-    dynamodb_table       = "eks-learning-lab-terraform-lock"
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.11"
+    }
   }
 }
 
+# Configure providers
 provider "aws" {
   region = var.aws_region
-
+  
   default_tags {
-    tags = local.common_tags
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
   }
 }
 
+data "aws_eks_cluster" "cluster" {
+  name = module.foundation.cluster_name
+  depends_on = [module.foundation]
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.foundation.cluster_name
+  depends_on = [module.foundation]
+}
+
+provider "kubernetes" {
+  host                   = data.aws_eks_cluster.cluster.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = data.aws_eks_cluster.cluster.endpoint
+    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+    token                  = data.aws_eks_cluster_auth.cluster.token
+  }
+}
+
+# Local values
 locals {
-  # Common tags applied to all resources
-  common_tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    CreatedBy   = "terraform"
-    Repository  = "eks-foundation-platform"
-    Region      = var.aws_region
-  }
-
-  # Cluster name
-  cluster_name = var.cluster_name != "" ? var.cluster_name : "${var.project_name}-${var.environment}"
-
-  # Kubernetes add-on versions (latest stable)
-  addon_versions = {
-    vpc_cni              = "v1.15.1-eksbuild.1"
-    kube_proxy           = "v1.28.2-eksbuild.2"
-    coredns              = "v1.10.1-eksbuild.5"
-    ebs_csi_driver       = "v1.24.0-eksbuild.1"
-  }
+  cluster_name = "${var.project_name}-${var.environment}-cluster"
 }
 
-# VPC Module
-module "vpc" {
-  source = "../../modules/vpc"
+# Workflow 1: Foundation Platform
+module "foundation" {
+  source = "../../modules/foundation"
+
+  project_name              = var.project_name
+  environment              = var.environment
+  owner                    = var.owner
+  aws_region               = var.aws_region
+  availability_zones_count = var.availability_zones_count
+  vpc_cidr                 = var.vpc_cidr
+  private_subnet_cidrs     = var.private_subnet_cidrs
+  public_subnet_cidrs      = var.public_subnet_cidrs
+  single_nat_gateway       = var.single_nat_gateway
+  kubernetes_version       = var.kubernetes_version
+}
+
+# IAM roles for observability components
+module "observability_irsa_roles" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.0"
+
+  for_each = toset(["mimir", "loki", "tempo"])
+
+  role_name = "${local.cluster_name}-${each.key}"
+
+  role_policy_arns = {
+    policy = aws_iam_policy.observability_s3_policy[each.key].arn
+  }
+
+  oidc_providers = {
+    ex = {
+      provider_arn               = module.foundation.oidc_provider_arn
+      namespace_service_accounts = ["observability:${each.key}"]
+    }
+  }
+
+  depends_on = [module.foundation]
+}
+
+# S3 access policy for observability components
+resource "aws_iam_policy" "observability_s3_policy" {
+  for_each = toset(["mimir", "loki", "tempo"])
+  
+  name        = "${local.cluster_name}-${each.key}-s3-policy"
+  description = "S3 access policy for ${each.key}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          module.foundation.observability_s3_buckets[each.key].arn,
+          "${module.foundation.observability_s3_buckets[each.key].arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Workflow 2: Ingress + API Gateway
+module "ingress" {
+  source = "../../modules/ingress"
 
   project_name         = var.project_name
-  environment          = var.environment
-  cluster_name         = local.cluster_name
-  vpc_cidr             = var.vpc_cidr
-  enable_nat_gateway   = var.enable_nat_gateway
-  enable_vpc_endpoints = var.enable_vpc_endpoints
-  enable_flow_logs     = var.enable_flow_logs
+  environment         = var.environment
+  cluster_name        = module.foundation.cluster_name
+  domain_name         = var.domain_name
+  domain_filters      = [var.domain_name]
+  letsencrypt_email   = var.letsencrypt_email
+  cloudflare_email    = var.cloudflare_email
+  cloudflare_api_token = var.cloudflare_api_token
+
+  depends_on = [module.foundation]
 }
 
-# Basic IAM Module (cluster and node group roles)
-module "iam" {
-  source = "../../modules/iam"
+# Workflow 3: LGTM Observability Stack
+module "observability" {
+  source = "../../modules/observability"
+
+  project_name      = var.project_name
+  environment      = var.environment
+  cluster_name     = module.foundation.cluster_name
+  domain_name      = var.domain_name
+  aws_region       = var.aws_region
+
+  # S3 buckets
+  prometheus_s3_bucket = module.foundation.observability_s3_buckets["prometheus"].bucket
+  loki_s3_bucket      = module.foundation.observability_s3_buckets["loki"].bucket
+  tempo_s3_bucket     = module.foundation.observability_s3_buckets["tempo"].bucket
+
+  # IRSA roles
+  mimir_irsa_role_arn = module.observability_irsa_roles["mimir"].iam_role_arn
+  loki_irsa_role_arn  = module.observability_irsa_roles["loki"].iam_role_arn
+  tempo_irsa_role_arn = module.observability_irsa_roles["tempo"].iam_role_arn
+
+  grafana_admin_password = var.grafana_admin_password
+
+  depends_on = [module.foundation, module.ingress]
+}
+
+# Workflow 4: GitOps & CI/CD
+module "gitops" {
+  source = "../../modules/gitops"
+
+  project_name        = var.project_name
+  environment        = var.environment
+  cluster_name       = module.foundation.cluster_name
+  domain_name        = var.domain_name
+  gitops_repo_url    = var.gitops_repo_url
+  gitops_repo_branch = var.gitops_repo_branch
+
+  depends_on = [module.foundation, module.ingress, module.observability]
+}
+
+# Workflow 5: Security Foundation
+module "security" {
+  source = "../../modules/security"
+
+  project_name      = var.project_name
+  environment      = var.environment
+  cluster_name     = module.foundation.cluster_name
+  slack_webhook_url = var.slack_webhook_url
+
+  depends_on = [module.foundation, module.ingress, module.observability]
+}
+
+# Workflow 6: Service Mesh
+module "service_mesh" {
+  source = "../../modules/service-mesh"
 
   project_name = var.project_name
   environment  = var.environment
+  cluster_name = module.foundation.cluster_name
+  domain_name  = var.domain_name
+
+  depends_on = [module.foundation, module.ingress, module.observability]
 }
 
-# EKS Cluster Module
-module "eks" {
-  source = "../../modules/eks"
+# Workflow 7: Data Services
+module "data_services" {
+  source = "../../modules/data-services"
 
-  project_name            = var.project_name
-  environment             = var.environment
-  cluster_name            = local.cluster_name
-  kubernetes_version      = var.kubernetes_version
-  vpc_id                  = module.vpc.vpc_id
-  public_subnet_ids       = module.vpc.public_subnet_ids
-  private_subnet_ids      = module.vpc.private_subnet_ids
-  cluster_role_arn        = module.iam.eks_cluster_role_arn
-  node_group_role_arn     = module.iam.eks_node_group_role_arn
+  project_name = var.project_name
+  environment  = var.environment
+  cluster_name = module.foundation.cluster_name
 
-  # Node group settings
-  instance_types     = var.instance_types
-  capacity_type      = var.capacity_type
-  desired_capacity   = var.desired_capacity
-  min_capacity       = var.min_capacity
-  max_capacity       = var.max_capacity
-  node_disk_size     = var.node_disk_size
+  # PostgreSQL Configuration
+  postgres_password           = var.postgres_password
+  postgres_backup_bucket      = "${var.project_name}-${var.environment}-postgres-backup"
+  postgres_backup_access_key  = var.postgres_backup_access_key
+  postgres_backup_secret_key  = var.postgres_backup_secret_key
 
-  # Security settings
-  endpoint_private_access = true
-  endpoint_public_access  = true
-  public_access_cidrs     = ["0.0.0.0/0"]
-  cluster_log_types       = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-
-  # Add-on versions
-  vpc_cni_version         = local.addon_versions.vpc_cni
-  kube_proxy_version      = local.addon_versions.kube_proxy
-  coredns_version         = local.addon_versions.coredns
-  ebs_csi_driver_version  = local.addon_versions.ebs_csi_driver
-
-  depends_on = [module.vpc, module.iam]
+  depends_on = [module.foundation, module.ingress, module.observability]
 }
 
-# IRSA IAM Module (roles that depend on OIDC provider)
-module "iam_irsa" {
-  source = "../../modules/iam-irsa"
+# Install AWS Load Balancer Controller
+resource "helm_release" "aws_load_balancer_controller" {
+  name       = "aws-load-balancer-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  version    = "1.6.2"
+  namespace  = "kube-system"
 
-  project_name      = var.project_name
-  environment       = var.environment
-  oidc_provider_arn = module.eks.oidc_provider_arn
-  oidc_provider_url = module.eks.oidc_provider_url
+  set {
+    name  = "clusterName"
+    value = module.foundation.cluster_name
+  }
 
-  depends_on = [module.eks]
+  set {
+    name  = "serviceAccount.create"
+    value = "true"
+  }
+
+  set {
+    name  = "serviceAccount.name"
+    value = "aws-load-balancer-controller"
+  }
+
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.foundation.aws_load_balancer_controller_role_arn
+  }
+
+  set {
+    name  = "region"
+    value = var.aws_region
+  }
+
+  set {
+    name  = "vpcId"
+    value = module.foundation.vpc_id
+  }
+
+  depends_on = [module.foundation]
 }
 
-# EBS CSI Driver Addon (applied after IRSA roles are created)
-resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name                = module.eks.cluster_name
-  addon_name                  = "aws-ebs-csi-driver"
-  addon_version               = local.addon_versions.ebs_csi_driver
-  service_account_role_arn    = module.iam_irsa.ebs_csi_driver_role_arn
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
+# Install Cluster Autoscaler
+resource "helm_release" "cluster_autoscaler" {
+  name       = "cluster-autoscaler"
+  repository = "https://kubernetes.github.io/autoscaler"
+  chart      = "cluster-autoscaler"
+  version    = "9.29.0"
+  namespace  = "kube-system"
 
-  tags = local.common_tags
+  set {
+    name  = "autoDiscovery.clusterName"
+    value = module.foundation.cluster_name
+  }
 
-  depends_on = [module.eks, module.iam_irsa]
+  set {
+    name  = "awsRegion"
+    value = var.aws_region
+  }
+
+  set {
+    name  = "rbac.serviceAccount.create"
+    value = "true"
+  }
+
+  set {
+    name  = "rbac.serviceAccount.name"
+    value = "cluster-autoscaler"
+  }
+
+  set {
+    name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.foundation.cluster_autoscaler_role_arn
+  }
+
+  set {
+    name  = "extraArgs.scale-down-delay-after-add"
+    value = "10m"
+  }
+
+  set {
+    name  = "extraArgs.scale-down-unneeded-time"
+    value = "10m"
+  }
+
+  set {
+    name  = "extraArgs.scale-down-utilization-threshold"
+    value = "0.5"
+  }
+
+  depends_on = [module.foundation]
 }

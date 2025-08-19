@@ -1,0 +1,81 @@
+{
+  "mcpServers": {
+    "aws-staging": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "AWS_PROFILE": "staging",
+        "FASTMCP_LOG_LEVEL": "INFO"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "describe-*",
+        "list-*",
+        "get-*"
+      ]
+    },
+    "kubernetes-staging": {
+      "command": "uvx",
+      "args": ["kubernetes-mcp-server@latest"],
+      "env": {
+        "KUBECONFIG": "~/.kube/config-staging",
+        "KUBE_CONTEXT": "eks-learning-lab-staging-cluster"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get",
+        "describe",
+        "logs",
+        "top",
+        "port-forward"
+      ]
+    },
+    "monitoring-staging": {
+      "command": "uvx",
+      "args": ["prometheus-mcp-server@latest"],
+      "env": {
+        "PROMETHEUS_URL": "http://prometheus-staging.observability.svc.cluster.local:9090",
+        "GRAFANA_URL": "http://grafana-staging.observability.svc.cluster.local:3000"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "query",
+        "query_range",
+        "series",
+        "label_names",
+        "label_values"
+      ]
+    },
+    "github-actions-staging": {
+      "command": "uvx",
+      "args": ["github-actions-mcp-server@latest"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "GITHUB_REPOSITORY": "company/eks-learning-lab"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list-workflows",
+        "get-workflow",
+        "list-runs",
+        "get-run"
+      ]
+    }
+  },
+  "environmentSettings": {
+    "environment": "staging",
+    "logLevel": "INFO",
+    "requestTimeout": "45s",
+    "maxConcurrentRequests": 15,
+    "retryAttempts": 3,
+    "cacheEnabled": true,
+    "cacheTTL": "600s"
+  },
+  "approvalGates": {
+    "destructiveOperations": true,
+    "resourceModifications": true,
+    "configurationChanges": true,
+    "costImpactingChanges": true
+  }
+}

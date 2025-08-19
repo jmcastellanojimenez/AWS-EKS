@@ -1,0 +1,291 @@
+name: "Knowledge Management Automation"
+description: "Automated knowledge base improvement, documentation gap detection, and expertise mapping"
+version: "1.0.0"
+
+triggers:
+  - type: "scheduled"
+    schedule: "0 9 * * 1"  # Every Monday at 9 AM
+    description: "Weekly knowledge base analysis and improvement"
+
+  - type: "manual"
+    description: "On-demand knowledge management analysis"
+
+  - type: "file_change"
+    patterns:
+      - "**/*.md"
+      - "terraform/**/*.tf"
+      - ".github/workflows/*.yml"
+      - ".kiro/specs/**/*.md"
+      - ".kiro/steering/**/*.md"
+    description: "Triggered when documentation or infrastructure changes"
+
+actions:
+  - name: "detect_documentation_gaps"
+    description: "Identify areas lacking proper documentation"
+    steps:
+      - analyze_code_to_documentation_ratio
+      - identify_undocumented_terraform_modules
+      - check_missing_troubleshooting_guides
+      - detect_outdated_procedures
+      - scan_for_todo_comments
+      - identify_complex_code_without_docs
+
+  - name: "analyze_knowledge_distribution"
+    description: "Map expertise and identify knowledge silos"
+    steps:
+      - analyze_git_commit_patterns
+      - identify_subject_matter_experts
+      - detect_knowledge_concentration_risks
+      - map_component_ownership
+      - identify_cross_training_opportunities
+
+  - name: "suggest_documentation_improvements"
+    description: "Generate actionable documentation improvement recommendations"
+    steps:
+      - prioritize_documentation_gaps
+      - suggest_content_structure
+      - recommend_documentation_templates
+      - identify_automation_opportunities
+      - propose_knowledge_sharing_sessions
+
+  - name: "maintain_knowledge_base"
+    description: "Keep knowledge base current and organized"
+    steps:
+      - update_faq_based_on_support_tickets
+      - consolidate_duplicate_information
+      - archive_obsolete_documentation
+      - update_links_and_references
+      - maintain_glossary_and_terminology
+
+  - name: "facilitate_knowledge_sharing"
+    description: "Automate knowledge sharing workflows"
+    steps:
+      - schedule_knowledge_sharing_sessions
+      - create_learning_paths
+      - generate_onboarding_checklists
+      - suggest_mentorship_pairings
+      - track_knowledge_transfer_progress
+
+configuration:
+  analysis_settings:
+    documentation_coverage_threshold: 80
+    complexity_threshold: 10  # Cyclomatic complexity
+    knowledge_concentration_threshold: 70  # Percentage of commits by single person
+    
+  content_analysis:
+    check_readability: true
+    readability_target: "grade_8"  # Flesch-Kincaid grade level
+    check_completeness: true
+    validate_examples: true
+    
+  expertise_mapping:
+    git_history_months: 12
+    minimum_commits_for_expertise: 10
+    track_review_patterns: true
+    include_issue_contributions: true
+    
+  knowledge_sharing:
+    session_frequency: "monthly"
+    max_session_duration_minutes: 60
+    preferred_formats: ["demo", "workshop", "documentation_review"]
+    
+  automation_rules:
+    auto_create_issues: true
+    auto_assign_documentation_tasks: true
+    auto_schedule_reviews: true
+    auto_update_knowledge_metrics: true
+
+  notification_settings:
+    slack_channel: "#platform-knowledge"
+    email_digest: "weekly"
+    escalation_threshold: "critical_gaps_detected"
+
+knowledge_categories:
+  infrastructure:
+    - terraform_modules
+    - aws_services
+    - kubernetes_concepts
+    - networking_configuration
+    - security_policies
+    
+  operations:
+    - deployment_procedures
+    - troubleshooting_guides
+    - monitoring_and_alerting
+    - incident_response
+    - maintenance_procedures
+    
+  development:
+    - coding_standards
+    - testing_practices
+    - ci_cd_pipelines
+    - local_development_setup
+    - debugging_techniques
+    
+  business:
+    - architecture_decisions
+    - requirements_documentation
+    - user_guides
+    - api_documentation
+    - integration_guides
+
+gap_detection_rules:
+  critical_gaps:
+    - terraform_module_without_readme
+    - complex_function_without_comments
+    - deployment_procedure_without_rollback
+    - security_configuration_without_explanation
+    - api_endpoint_without_documentation
+    
+  important_gaps:
+    - missing_troubleshooting_section
+    - outdated_version_references
+    - broken_internal_links
+    - missing_code_examples
+    - incomplete_configuration_guides
+    
+  nice_to_have:
+    - missing_architecture_diagrams
+    - limited_best_practices_documentation
+    - missing_performance_tuning_guides
+    - incomplete_glossary_entries
+    - missing_video_tutorials
+
+expertise_mapping:
+  skill_areas:
+    - terraform_infrastructure
+    - kubernetes_operations
+    - aws_services
+    - observability_stack
+    - security_implementation
+    - microservices_architecture
+    - ci_cd_pipelines
+    - troubleshooting
+    
+  expertise_levels:
+    - novice: "< 3 months experience"
+    - intermediate: "3-12 months experience"
+    - advanced: "1-3 years experience"
+    - expert: "> 3 years experience"
+    
+  knowledge_transfer_tracking:
+    - mentorship_sessions_completed
+    - documentation_contributions
+    - knowledge_sharing_presentations
+    - cross_training_participation
+    - code_review_contributions
+
+improvement_suggestions:
+  documentation_templates:
+    - terraform_module_readme
+    - troubleshooting_guide
+    - deployment_procedure
+    - api_documentation
+    - architecture_decision_record
+    
+  automation_opportunities:
+    - auto_generate_api_docs
+    - auto_update_dependency_versions
+    - auto_create_troubleshooting_entries
+    - auto_validate_code_examples
+    - auto_generate_changelog
+    
+  knowledge_sharing_formats:
+    - lunch_and_learn_sessions
+    - documentation_review_meetings
+    - hands_on_workshops
+    - architecture_deep_dives
+    - troubleshooting_case_studies
+
+metrics_tracking:
+  documentation_metrics:
+    - coverage_percentage
+    - freshness_score
+    - readability_score
+    - completeness_score
+    - user_satisfaction_rating
+    
+  knowledge_sharing_metrics:
+    - sessions_conducted_per_month
+    - participation_rate
+    - knowledge_transfer_success_rate
+    - cross_training_completion_rate
+    - documentation_contribution_rate
+    
+  expertise_metrics:
+    - knowledge_distribution_score
+    - bus_factor_risk_score
+    - expertise_growth_rate
+    - mentorship_effectiveness
+    - knowledge_retention_rate
+
+reporting:
+  weekly_digest:
+    - new_documentation_gaps_identified
+    - knowledge_sharing_activities_completed
+    - expertise_mapping_updates
+    - improvement_suggestions_generated
+    
+  monthly_report:
+    - documentation_coverage_trends
+    - knowledge_sharing_effectiveness
+    - expertise_distribution_analysis
+    - knowledge_management_roi
+    
+  quarterly_review:
+    - strategic_knowledge_gaps
+    - long_term_improvement_recommendations
+    - knowledge_management_maturity_assessment
+    - team_capability_development_plan
+
+escalation_conditions:
+  critical_knowledge_risks:
+    - single_point_of_failure_expertise
+    - critical_system_without_documentation
+    - high_complexity_without_knowledge_transfer
+    - key_personnel_departure_risk
+    
+  improvement_opportunities:
+    - documentation_coverage_below_threshold
+    - knowledge_sharing_participation_low
+    - expertise_concentration_too_high
+    - onboarding_time_exceeding_targets
+
+safety_controls:
+  max_automated_actions: 20
+  require_approval_for:
+    - major_documentation_restructuring
+    - expertise_mapping_publication
+    - knowledge_sharing_schedule_changes
+    - critical_gap_escalations
+    
+  data_privacy:
+    - anonymize_individual_performance_data
+    - protect_sensitive_expertise_information
+    - secure_knowledge_base_access
+    - maintain_audit_trail
+
+integration:
+  github:
+    - create_issues_for_documentation_gaps
+    - assign_documentation_tasks
+    - track_documentation_pull_requests
+    - analyze_code_review_patterns
+    
+  slack:
+    - post_knowledge_sharing_reminders
+    - share_weekly_knowledge_digest
+    - facilitate_expert_connections
+    - announce_learning_opportunities
+    
+  confluence_or_wiki:
+    - sync_documentation_updates
+    - maintain_knowledge_base_structure
+    - track_page_usage_analytics
+    - manage_content_lifecycle
+    
+  learning_management_system:
+    - create_learning_paths
+    - track_training_completion
+    - assess_knowledge_retention
+    - recommend_skill_development

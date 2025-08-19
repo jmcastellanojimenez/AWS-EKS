@@ -1,0 +1,299 @@
+name: "Deployment Validation and Pre-Deployment Checks"
+description: "Automated validation of Terraform configurations, dependency verification, and deployment readiness assessment"
+version: "1.0.0"
+
+trigger:
+  type: "intelligent_file_change"
+  patterns:
+    - "terraform/**/*.tf"
+    - "terraform/**/*.tfvars"
+    - ".github/workflows/*.yml"
+    - "k8s/**/*.yaml"
+    - "k8s/**/*.yml"
+  
+  optimization:
+    debounce_period: "30s"  # Avoid multiple triggers for batch changes
+    change_impact_analysis: true
+    parallel_validation: true
+    
+  manual_trigger: true
+  pre_deployment: true
+  
+  intelligent_triggers:
+    - type: "critical_path_change"
+      files: ["terraform/modules/eks/**", "terraform/modules/vpc/**"]
+      priority: "high"
+      validation_depth: "deep"
+      
+    - type: "configuration_change"
+      files: ["k8s/**/*.yaml", "terraform/**/*.tfvars"]
+      priority: "medium"
+      validation_depth: "standard"
+
+configuration:
+  validation_scope:
+    terraform:
+      - "syntax_validation"
+      - "format_validation" 
+      - "security_scanning"
+      - "dependency_analysis"
+      - "resource_limit_validation"
+    
+    kubernetes:
+      - "manifest_validation"
+      - "resource_quota_check"
+      - "security_policy_validation"
+      - "network_policy_validation"
+    
+    github_actions:
+      - "workflow_syntax_validation"
+      - "secret_reference_validation"
+      - "environment_consistency_check"
+
+  deployment_order:
+    workflows:
+      - name: "foundation"
+        priority: 1
+        dependencies: []
+        components: ["vpc", "iam", "eks"]
+      
+      - name: "ingress"
+        priority: 2
+        dependencies: ["foundation"]
+        components: ["cert-manager", "external-dns", "ambassador"]
+      
+      - name: "observability"
+        priority: 3
+        dependencies: ["foundation"]
+        components: ["prometheus", "loki", "grafana", "tempo"]
+      
+      - name: "gitops"
+        priority: 4
+        dependencies: ["foundation", "ingress", "observability"]
+        components: ["argocd", "tekton"]
+      
+      - name: "security"
+        priority: 4
+        dependencies: ["foundation", "ingress", "observability"]
+        components: ["openbao", "opa-gatekeeper", "falco"]
+      
+      - name: "service-mesh"
+        priority: 4
+        dependencies: ["foundation", "ingress", "observability"]
+        components: ["istio"]
+      
+      - name: "data-services"
+        priority: 4
+        dependencies: ["foundation", "ingress", "observability"]
+        components: ["postgresql", "redis", "kafka"]
+
+actions:
+  - name: "terraform_syntax_validation"
+    description: "Validate Terraform syntax and formatting"
+    commands:
+      - "terraform fmt -check -recursive terraform/"
+      - "terraform validate -json terraform/environments/dev/"
+      - "terraform validate -json terraform/environments/staging/"
+      - "terraform validate -json terraform/environments/prod/"
+    
+    failure_action: "block_deployment"
+    
+  - name: "terraform_security_scan"
+    description: "Scan Terraform configurations for security issues"
+    commands:
+      - "tfsec terraform/ --format json"
+      - "checkov -d terraform/ --framework terraform --output json"
+    
+    failure_action: "warn_and_continue"
+    
+  - name: "dependency_verification"
+    description: "Verify workflow dependencies and deployment order"
+    validation_rules:
+      - "foundation_deployed_before_others"
+      - "ingress_available_before_applications"
+      - "observability_ready_before_advanced_workflows"
+      - "cluster_capacity_sufficient"
+    
+  - name: "resource_limit_validation"
+    description: "Validate resource requests and limits"
+    checks:
+      - name: "cpu_limits_defined"
+        rule: "All containers must have CPU limits defined"
+        pattern: "resources.limits.cpu"
+        
+      - name: "memory_limits_defined"
+        rule: "All containers must have memory limits defined"
+        pattern: "resources.limits.memory"
+        
+      - name: "resource_ratios_valid"
+        rule: "Resource requests should be 50-80% of limits"
+        validation: "requests <= limits * 0.8"
+        
+      - name: "total_resources_within_capacity"
+        rule: "Total requested resources must not exceed cluster capacity"
+        calculation: "sum(requests) <= cluster_capacity * 0.8"
+    
+  - name: "kubernetes_manifest_validation"
+    description: "Validate Kubernetes manifests"
+    commands:
+      - "kubectl apply --dry-run=client -f k8s/"
+      - "kubectl apply --dry-run=server -f k8s/"
+      - "kubeval k8s/**/*.yaml"
+    
+  - name: "network_policy_validation"
+    description: "Validate network policies and security configurations"
+    checks:
+      - "ingress_rules_defined"
+      - "egress_rules_defined"
+      - "default_deny_policy_exists"
+      - "service_mesh_compatibility"
+    
+  - name: "github_workflow_validation"
+    description: "Validate GitHub Actions workflows"
+    commands:
+      - "actionlint .github/workflows/*.yml"
+    
+    checks:
+      - "required_secrets_defined"
+      - "environment_variables_consistent"
+      - "manual_approval_required_for_prod"
+
+pre_deployment_checks:
+  - name: "cluster_readiness"
+    description: "Verify cluster is ready for deployment"
+    validations:
+      - "kubectl cluster-info"
+      - "kubectl get nodes --no-headers | wc -l >= 3"
+      - "kubectl get pods -n kube-system --field-selector=status.phase=Running | wc -l >= 10"
+    
+  - name: "resource_availability"
+    description: "Check available cluster resources"
+    validations:
+      - "node_cpu_available >= required_cpu"
+      - "node_memory_available >= required_memory"
+      - "storage_available >= required_storage"
+    
+  - name: "dependency_services_healthy"
+    description: "Verify dependent services are healthy"
+    health_checks:
+      - service: "coredns"
+        namespace: "kube-system"
+        endpoint: "/health"
+      
+      - service: "prometheus-server"
+        namespace: "observability"
+        endpoint: "/api/v1/status/config"
+        required_for: ["monitoring", "alerting"]
+      
+      - service: "grafana"
+        namespace: "observability"
+        endpoint: "/api/health"
+        required_for: ["dashboards", "visualization"]
+
+deployment_recommendations:
+  - name: "optimal_deployment_time"
+    condition: "low_traffic_period"
+    suggestion: "Deploy during low traffic hours (2-6 AM UTC) for minimal impact"
+    
+  - name: "rollback_preparation"
+    condition: "production_deployment"
+    suggestion: "Ensure rollback procedures are documented and tested"
+    
+  - name: "monitoring_setup"
+    condition: "new_service_deployment"
+    suggestion: "Configure monitoring and alerting before deploying to production"
+    
+  - name: "capacity_planning"
+    condition: "resource_usage > 70%"
+    suggestion: "Consider scaling cluster before deploying resource-intensive workloads"
+
+validation_reports:
+  format: "json"
+  include_suggestions: true
+  include_security_findings: true
+  
+  sections:
+    - "syntax_validation_results"
+    - "security_scan_results"
+    - "dependency_analysis"
+    - "resource_validation"
+    - "deployment_readiness"
+    - "risk_assessment"
+    - "recommended_actions"
+
+integration:
+  terraform_cloud:
+    enabled: false
+    workspace_validation: true
+    
+  github_actions:
+    enabled: true
+    status_checks: true
+    required_reviews: 2
+    
+  slack:
+    enabled: false
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channel: "#deployments"
+    
+  prometheus:
+    enabled: true
+    deployment_metrics: true
+    validation_metrics: true
+
+security_validations:
+  iam_policies:
+    - "least_privilege_principle"
+    - "no_wildcard_permissions"
+    - "mfa_required_for_sensitive_operations"
+    
+  network_security:
+    - "security_groups_restrictive"
+    - "no_public_subnets_for_workloads"
+    - "encryption_in_transit_enabled"
+    
+  secrets_management:
+    - "no_hardcoded_secrets"
+    - "secrets_encrypted_at_rest"
+    - "secret_rotation_configured"
+
+cost_impact_analysis:
+  enabled: true
+  estimate_deployment_cost: true
+  compare_with_budget: true
+  
+  cost_factors:
+    - "additional_compute_resources"
+    - "storage_requirements"
+    - "network_data_transfer"
+    - "load_balancer_costs"
+    - "observability_overhead"
+
+failure_handling:
+  on_validation_failure:
+    - "block_deployment"
+    - "notify_team"
+    - "create_issue"
+    - "suggest_fixes"
+    
+  on_dependency_failure:
+    - "wait_for_dependencies"
+    - "suggest_alternative_order"
+    - "escalate_if_critical"
+    
+  retry_policy:
+    max_attempts: 3
+    backoff_strategy: "exponential"
+    retry_delay: "30s"
+
+compliance_checks:
+  regulatory:
+    - "data_residency_requirements"
+    - "audit_logging_enabled"
+    - "backup_retention_policy"
+    
+  organizational:
+    - "naming_conventions_followed"
+    - "tagging_standards_applied"
+    - "documentation_updated"
+    - "change_management_process_followed"

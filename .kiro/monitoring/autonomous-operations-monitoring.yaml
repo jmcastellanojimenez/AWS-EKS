@@ -1,0 +1,143 @@
+name: "Autonomous Operations Success Monitoring"
+description: "Monitor and track success rates of autonomous operations across all environments"
+trigger: "scheduled"
+schedule: "*/5 * * * *"  # Every 5 minutes
+
+metrics_collection:
+  - name: "automation_success_rate"
+    type: "gauge"
+    query: "sum(rate(kiro_automation_success_total[5m])) / sum(rate(kiro_automation_total[5m]))"
+    target: 0.95
+    alert_threshold: 0.90
+    
+  - name: "decision_accuracy"
+    type: "gauge"
+    query: "sum(kiro_correct_decisions_total) / sum(kiro_total_decisions_total)"
+    target: 0.92
+    alert_threshold: 0.88
+    
+  - name: "human_intervention_rate"
+    type: "gauge"
+    query: "sum(rate(kiro_human_interventions_total[1h])) / sum(rate(kiro_total_operations_total[1h]))"
+    target: 0.15
+    alert_threshold: 0.25
+    
+  - name: "escalation_appropriateness"
+    type: "gauge"
+    query: "sum(kiro_appropriate_escalations_total) / sum(kiro_total_escalations_total)"
+    target: 0.90
+    alert_threshold: 0.85
+    
+  - name: "rollback_necessity_rate"
+    type: "gauge"
+    query: "sum(rate(kiro_rollbacks_total[1h])) / sum(rate(kiro_total_operations_total[1h]))"
+    target: 0.05
+    alert_threshold: 0.10
+
+performance_tracking:
+  - name: "mean_time_to_resolution"
+    type: "histogram"
+    query: "histogram_quantile(0.95, kiro_mttr_seconds_bucket)"
+    target: 900  # 15 minutes
+    alert_threshold: 1800  # 30 minutes
+    
+  - name: "issue_detection_time"
+    type: "histogram"
+    query: "histogram_quantile(0.95, kiro_detection_time_seconds_bucket)"
+    target: 120  # 2 minutes
+    alert_threshold: 300  # 5 minutes
+    
+  - name: "optimization_effectiveness"
+    type: "gauge"
+    query: "sum(kiro_optimization_savings_dollars) / sum(kiro_baseline_cost_dollars)"
+    target: 0.30
+    alert_threshold: 0.20
+
+environment_specific_tracking:
+  development:
+    automation_success_target: 0.90
+    human_intervention_tolerance: 0.30
+    rollback_tolerance: 0.15
+    
+  staging:
+    automation_success_target: 0.95
+    human_intervention_tolerance: 0.20
+    rollback_tolerance: 0.08
+    
+  production:
+    automation_success_target: 0.98
+    human_intervention_tolerance: 0.10
+    rollback_tolerance: 0.03
+
+alerting_rules:
+  - name: "AutomationSuccessRateLow"
+    condition: "automation_success_rate < target"
+    severity: "warning"
+    duration: "10m"
+    action: "investigate_automation_failures"
+    
+  - name: "HighHumanInterventionRate"
+    condition: "human_intervention_rate > alert_threshold"
+    severity: "warning"
+    duration: "30m"
+    action: "review_autonomous_boundaries"
+    
+  - name: "ExcessiveRollbacks"
+    condition: "rollback_necessity_rate > alert_threshold"
+    severity: "critical"
+    duration: "15m"
+    action: "pause_autonomous_operations"
+    
+  - name: "DecisionAccuracyLow"
+    condition: "decision_accuracy < alert_threshold"
+    severity: "warning"
+    duration: "1h"
+    action: "review_decision_algorithms"
+
+feedback_collection:
+  - name: "operation_outcome_tracking"
+    method: "automated"
+    frequency: "per_operation"
+    metrics: ["success", "failure", "partial_success", "rollback_required"]
+    
+  - name: "user_satisfaction_surveys"
+    method: "manual"
+    frequency: "weekly"
+    target_audience: ["developers", "platform_engineers", "sre_team"]
+    
+  - name: "incident_post_mortems"
+    method: "automated"
+    frequency: "per_incident"
+    analysis: ["root_cause", "kiro_involvement", "improvement_opportunities"]
+
+improvement_tracking:
+  - name: "learning_rate"
+    metric: "improvement_in_success_rate_over_time"
+    target: "5% improvement per month"
+    
+  - name: "adaptation_effectiveness"
+    metric: "reduction_in_false_positives_over_time"
+    target: "10% reduction per month"
+    
+  - name: "optimization_discovery"
+    metric: "new_optimization_opportunities_identified"
+    target: "3 per week"
+
+reporting:
+  daily_summary:
+    - automation_success_rates
+    - key_performance_indicators
+    - notable_incidents_or_improvements
+    - resource_optimization_achievements
+    
+  weekly_analysis:
+    - trend_analysis
+    - performance_regression_detection
+    - improvement_opportunity_identification
+    - stakeholder_satisfaction_metrics
+    
+  monthly_review:
+    - comprehensive_effectiveness_assessment
+    - roi_analysis
+    - strategic_recommendations
+    - continuous_improvement_planning

@@ -1,0 +1,85 @@
+{
+  "mcpServers": {
+    "aws-prod": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "AWS_PROFILE": "prod",
+        "FASTMCP_LOG_LEVEL": "WARN"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "describe-*",
+        "list-*",
+        "get-*"
+      ]
+    },
+    "kubernetes-prod": {
+      "command": "uvx",
+      "args": ["kubernetes-mcp-server@latest"],
+      "env": {
+        "KUBECONFIG": "~/.kube/config-prod",
+        "KUBE_CONTEXT": "eks-learning-lab-prod-cluster"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get",
+        "describe",
+        "logs",
+        "top"
+      ]
+    },
+    "monitoring-prod": {
+      "command": "uvx",
+      "args": ["prometheus-mcp-server@latest"],
+      "env": {
+        "PROMETHEUS_URL": "http://prometheus-prod.observability.svc.cluster.local:9090",
+        "GRAFANA_URL": "http://grafana-prod.observability.svc.cluster.local:3000"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "query",
+        "query_range",
+        "series"
+      ]
+    },
+    "github-actions-prod": {
+      "command": "uvx",
+      "args": ["github-actions-mcp-server@latest"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "GITHUB_REPOSITORY": "company/eks-learning-lab"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list-workflows",
+        "get-workflow",
+        "list-runs"
+      ]
+    }
+  },
+  "environmentSettings": {
+    "environment": "prod",
+    "logLevel": "WARN",
+    "requestTimeout": "30s",
+    "maxConcurrentRequests": 10,
+    "retryAttempts": 2,
+    "cacheEnabled": true,
+    "cacheTTL": "900s"
+  },
+  "approvalGates": {
+    "allOperations": true,
+    "destructiveOperations": true,
+    "resourceModifications": true,
+    "configurationChanges": true,
+    "costImpactingChanges": true,
+    "securityChanges": true
+  },
+  "complianceSettings": {
+    "auditLogging": true,
+    "changeTracking": true,
+    "accessMonitoring": true,
+    "dataProtection": "strict"
+  }
+}

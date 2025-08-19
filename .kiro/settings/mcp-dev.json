@@ -1,0 +1,88 @@
+{
+  "mcpServers": {
+    "aws-dev": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "AWS_PROFILE": "dev",
+        "FASTMCP_LOG_LEVEL": "DEBUG"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "describe-*",
+        "list-*",
+        "get-*",
+        "create-tags",
+        "modify-*",
+        "update-*",
+        "put-*"
+      ]
+    },
+    "kubernetes-dev": {
+      "command": "uvx",
+      "args": ["kubernetes-mcp-server@latest"],
+      "env": {
+        "KUBECONFIG": "~/.kube/config-dev",
+        "KUBE_CONTEXT": "eks-learning-lab-dev-cluster"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get",
+        "describe",
+        "logs",
+        "top",
+        "port-forward",
+        "exec",
+        "apply",
+        "delete",
+        "scale",
+        "rollout"
+      ]
+    },
+    "monitoring-dev": {
+      "command": "uvx",
+      "args": ["prometheus-mcp-server@latest"],
+      "env": {
+        "PROMETHEUS_URL": "http://prometheus-dev.observability.svc.cluster.local:9090",
+        "GRAFANA_URL": "http://grafana-dev.observability.svc.cluster.local:3000"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "query",
+        "query_range",
+        "series",
+        "label_names",
+        "label_values",
+        "targets",
+        "rules"
+      ]
+    },
+    "github-actions-dev": {
+      "command": "uvx",
+      "args": ["github-actions-mcp-server@latest"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "GITHUB_REPOSITORY": "company/eks-learning-lab"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list-workflows",
+        "get-workflow",
+        "list-runs",
+        "get-run",
+        "trigger-workflow",
+        "cancel-run"
+      ]
+    }
+  },
+  "environmentSettings": {
+    "environment": "dev",
+    "logLevel": "DEBUG",
+    "requestTimeout": "60s",
+    "maxConcurrentRequests": 20,
+    "retryAttempts": 5,
+    "cacheEnabled": true,
+    "cacheTTL": "300s"
+  }
+}

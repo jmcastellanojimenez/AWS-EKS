@@ -1,0 +1,53 @@
+name: "Development Environment Monitoring"
+description: "Relaxed monitoring and aggressive optimization for development environment"
+trigger: "scheduled"
+schedule: "*/10 * * * *"  # Every 10 minutes
+environment: "dev"
+
+conditions:
+  - type: "environment_check"
+    environment: "dev"
+  - type: "cluster_name_pattern"
+    pattern: "*-dev-*"
+
+actions:
+  - name: "resource_optimization"
+    type: "autonomous"
+    parameters:
+      cpu_threshold: 80
+      memory_threshold: 85
+      scaling_aggressiveness: "high"
+      cost_optimization: "aggressive"
+    
+  - name: "development_scaling"
+    type: "autonomous"
+    parameters:
+      business_hours_scaling: true
+      weekend_scale_down: true
+      night_scale_down: true
+      min_replicas: 1
+      max_replicas: 5
+    
+  - name: "debug_assistance"
+    type: "autonomous"
+    parameters:
+      log_level_adjustment: true
+      performance_profiling: true
+      trace_sampling_rate: 1.0
+      debug_endpoints: true
+
+escalation:
+  - condition: "error_rate > 5%"
+    action: "notify_dev_team"
+    urgency: "low"
+  - condition: "service_down > 5_minutes"
+    action: "notify_dev_team"
+    urgency: "medium"
+  - condition: "cluster_issues"
+    action: "notify_platform_team"
+    urgency: "high"
+
+notifications:
+  slack_channel: "#development-alerts"
+  email_list: ["dev-team@company.com"]
+  escalation_delay: "15_minutes"

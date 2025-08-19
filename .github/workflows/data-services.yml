@@ -1,0 +1,398 @@
+name: 📊 Data Services
+
+# MANUAL EXECUTION ONLY - No automatic triggers on push/PR
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Infrastructure Action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply  
+        - destroy
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      confirm_destroy:
+        description: 'For DESTROY: type CONFIRM-DESTROY'
+        required: false
+        type: string
+      auto_approve:
+        description: 'Auto-approve apply (use with caution)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.validate.outputs.action }}
+      environment: ${{ steps.validate.outputs.environment }}
+      should-proceed: ${{ steps.validate.outputs.should-proceed }}
+    steps:
+      - name: Validate Inputs
+        id: validate
+        run: |
+          echo "action=${{ inputs.action }}" >> $GITHUB_OUTPUT
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          
+          # Validate destroy confirmation
+          if [[ "${{ inputs.action }}" == "destroy" ]]; then
+            if [[ "${{ inputs.confirm_destroy }}" != "CONFIRM-DESTROY" ]]; then
+              echo "❌ Destroy action requires 'CONFIRM-DESTROY' confirmation"
+              echo "should-proceed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "✅ Destroy confirmation validated"
+          fi
+          
+          echo "should-proceed=true" >> $GITHUB_OUTPUT
+
+  check-prerequisites:
+    name: 🔍 Check Prerequisites
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: needs.validate-inputs.outputs.should-proceed == 'true'
+    outputs:
+      foundation-ready: ${{ steps.check.outputs.foundation-ready }}
+      observability-ready: ${{ steps.check.outputs.observability-ready }}
+      security-ready: ${{ steps.check.outputs.security-ready }}
+      service-mesh-ready: ${{ steps.check.outputs.service-mesh-ready }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CheckPrerequisites
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🔍 Check Prerequisites
+        id: check
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          
+          # Check Foundation Platform (Required)
+          if terraform state list | grep -q "module.eks.aws_eks_cluster"; then
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+            if [[ -n "$cluster_name" ]]; then
+              echo "✅ Foundation Platform found: $cluster_name"
+              echo "foundation-ready=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Foundation Platform cluster name not found"
+              echo "foundation-ready=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "❌ Foundation Platform not deployed. Deploy Workflow 1 first."
+            echo "foundation-ready=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check Observability Stack (Highly recommended for database monitoring)
+          if terraform state list | grep -q "module.lgtm_observability"; then
+            echo "✅ LGTM Observability Stack found"
+            echo "observability-ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  LGTM Observability Stack not found. Database monitoring will be limited."
+            echo "observability-ready=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check Security Stack (Recommended for database security)
+          if terraform state list | grep -q "module.security"; then
+            echo "✅ Security Foundation found"
+            echo "security-ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Security Foundation not found. Database security will be basic."
+            echo "security-ready=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check Service Mesh (Recommended for database traffic management)
+          if terraform state list | grep -q "module.service_mesh"; then
+            echo "✅ Service Mesh found"
+            echo "service-mesh-ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Service Mesh not found. Database traffic will not be managed by Istio."
+            echo "service-mesh-ready=false" >> $GITHUB_OUTPUT
+          fi
+
+  terraform-operation:
+    name: 📊 Deploy Data Services
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, check-prerequisites]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.check-prerequisites.outputs.foundation-ready == 'true'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      data-services-ready: ${{ steps.output.outputs.data-services-ready }}
+      postgresql-endpoint: ${{ steps.output.outputs.postgresql-endpoint }}
+      redis-endpoint: ${{ steps.output.outputs.redis-endpoint }}
+      kafka-endpoint: ${{ steps.output.outputs.kafka-endpoint }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-DataServices
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 📋 Terraform Init
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+
+      - name: ✅ Terraform Validate
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: terraform validate
+
+      - name: 📊 Terraform Plan
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          if [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
+            terraform plan -destroy -out=tfplan -target=module.data_services
+          else
+            terraform plan -out=tfplan -target=module.data_services
+          fi
+
+      - name: 🚀 Terraform Apply
+        if: needs.validate-inputs.outputs.action == 'apply'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          if [[ "${{ inputs.auto_approve }}" == "true" ]]; then
+            terraform apply tfplan
+          else
+            echo "❌ Manual approval required. Set auto_approve=true to proceed."
+            exit 1
+          fi
+
+      - name: 🗑️ Terraform Destroy
+        if: needs.validate-inputs.outputs.action == 'destroy'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        timeout-minutes: 45
+        run: terraform apply tfplan
+
+      - name: 📤 Get Data Services Information
+        id: output
+        if: needs.validate-inputs.outputs.action == 'apply'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          # Get Data Services stack information
+          data_services_ready=$(terraform output -raw data_services_ready 2>/dev/null || echo "false")
+          postgresql_endpoint=$(terraform output -raw postgresql_endpoint 2>/dev/null || echo "")
+          redis_endpoint=$(terraform output -raw redis_endpoint 2>/dev/null || echo "")
+          kafka_endpoint=$(terraform output -raw kafka_endpoint 2>/dev/null || echo "")
+          
+          echo "data-services-ready=$data_services_ready" >> $GITHUB_OUTPUT
+          echo "postgresql-endpoint=$postgresql_endpoint" >> $GITHUB_OUTPUT
+          echo "redis-endpoint=$redis_endpoint" >> $GITHUB_OUTPUT
+          echo "kafka-endpoint=$kafka_endpoint" >> $GITHUB_OUTPUT
+          
+          echo "✅ Data Services deployed successfully!"
+          echo "🐘 PostgreSQL: $postgresql_endpoint"
+          echo "🔴 Redis: $redis_endpoint"
+          echo "📨 Kafka: $kafka_endpoint"
+
+      - name: 🔧 Configure kubectl and Verify Stack
+        if: needs.validate-inputs.outputs.action == 'apply'
+        run: |
+          cluster_name=$(cd terraform/environments/${{ needs.validate-inputs.outputs.environment }} && terraform output -raw cluster_name)
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
+            
+            echo "🔍 Verifying Data Services Stack..."
+            
+            # Wait a bit for pods to start
+            sleep 60
+            
+            # Check data services namespace
+            echo "📊 Checking Data Services Namespace..."
+            kubectl get namespace data-services
+            
+            # Check PostgreSQL (CloudNativePG)
+            echo "🐘 Checking PostgreSQL Cluster..."
+            kubectl get cluster -n data-services
+            kubectl get pods -n data-services -l cnpg.io/cluster
+            kubectl get svc -n data-services -l cnpg.io/cluster
+            
+            # Check Redis
+            echo "🔴 Checking Redis..."
+            kubectl get pods -n data-services -l app=redis
+            kubectl get svc -n data-services -l app=redis
+            kubectl get redisfailovers -n data-services || echo "Redis Failover not configured"
+            
+            # Check Kafka (if enabled)
+            echo "📨 Checking Kafka..."
+            kubectl get pods -n data-services -l app=kafka || echo "Kafka not enabled or not ready yet"
+            kubectl get svc -n data-services -l app=kafka || echo "Kafka service not ready yet"
+            kubectl get kafkas -n data-services || echo "Kafka CRD not configured"
+            
+            # Check persistent volumes
+            echo "💾 Checking Persistent Volumes..."
+            kubectl get pv | grep data-services
+            kubectl get pvc -n data-services
+            
+            # Check storage classes
+            echo "🗄️ Checking Storage Classes..."
+            kubectl get storageclass
+            
+            # Test database connectivity
+            echo "🔌 Testing Database Connectivity..."
+            kubectl exec -n data-services -it $(kubectl get pods -n data-services -l cnpg.io/cluster -o jsonpath='{.items[0].metadata.name}') -- psql -U postgres -c "SELECT version();" || echo "PostgreSQL not ready for connections yet"
+            
+            # Test Redis connectivity
+            echo "🔌 Testing Redis Connectivity..."
+            kubectl exec -n data-services -it $(kubectl get pods -n data-services -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli ping || echo "Redis not ready for connections yet"
+            
+            echo "✅ Data services verification completed!"
+          fi
+
+  summary:
+    name: 📋 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, check-prerequisites, terraform-operation]
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 📊 Data Services Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action**: ${{ needs.validate-inputs.outputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ needs.validate-inputs.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Foundation Check**: ${{ needs.check-prerequisites.outputs.foundation-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Observability Stack**: ${{ needs.check-prerequisites.outputs.observability-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Security Stack**: ${{ needs.check-prerequisites.outputs.security-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Service Mesh**: ${{ needs.check-prerequisites.outputs.service-mesh-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ needs.terraform-operation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.check-prerequisites.outputs.foundation-ready }}" != "true" ]]; then
+            echo "### ❌ Foundation Platform Required" >> $GITHUB_STEP_SUMMARY
+            echo "Deploy **🏗️ Workflow 1: Foundation Platform** first before running this workflow." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.terraform-operation.result }}" == "success" ]]; then
+            if [[ "${{ needs.validate-inputs.outputs.action }}" == "apply" ]]; then
+              echo "### ✅ Data Services Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Components Deployed:**" >> $GITHUB_STEP_SUMMARY
+              echo "- 🐘 **PostgreSQL**: CloudNativePG operator with HA cluster" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔴 **Redis**: Redis Operator with Sentinel for high availability" >> $GITHUB_STEP_SUMMARY
+              echo "- 📨 **Kafka**: Strimzi Kafka operator for event streaming" >> $GITHUB_STEP_SUMMARY
+              echo "- 💾 **Persistent Storage**: EBS volumes with automatic backup" >> $GITHUB_STEP_SUMMARY
+              echo "- 📊 **Monitoring**: Database metrics integration with Prometheus" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔐 **Security**: Database credentials managed by External Secrets" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Resource Allocation:**" >> $GITHUB_STEP_SUMMARY
+              echo "- PostgreSQL Primary: ~500m CPU, ~1Gi memory, 100Gi storage" >> $GITHUB_STEP_SUMMARY
+              echo "- PostgreSQL Replicas (2): ~300m CPU, ~512Mi memory each" >> $GITHUB_STEP_SUMMARY
+              echo "- Redis Master: ~200m CPU, ~256Mi memory, 10Gi storage" >> $GITHUB_STEP_SUMMARY
+              echo "- Redis Replicas (2): ~100m CPU, ~128Mi memory each" >> $GITHUB_STEP_SUMMARY
+              echo "- Kafka Brokers (3): ~300m CPU, ~512Mi memory, 50Gi storage each" >> $GITHUB_STEP_SUMMARY
+              echo "- **Total**: ~2.1 CPU cores, ~3.5Gi memory, ~270Gi storage" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Database Features:**" >> $GITHUB_STEP_SUMMARY
+              echo "- **High Availability**: Multi-replica setup with automatic failover" >> $GITHUB_STEP_SUMMARY
+              echo "- **Backup & Recovery**: Automated backups with point-in-time recovery" >> $GITHUB_STEP_SUMMARY
+              echo "- **Monitoring**: Comprehensive metrics and alerting" >> $GITHUB_STEP_SUMMARY
+              echo "- **Security**: TLS encryption, credential rotation, network policies" >> $GITHUB_STEP_SUMMARY
+              echo "- **Scaling**: Horizontal and vertical scaling capabilities" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Connection Information:**" >> $GITHUB_STEP_SUMMARY
+              echo "\\`\\`\\`yaml" >> $GITHUB_STEP_SUMMARY
+              echo "# PostgreSQL Connection" >> $GITHUB_STEP_SUMMARY
+              echo "host: postgres-primary.data-services.svc.cluster.local" >> $GITHUB_STEP_SUMMARY
+              echo "port: 5432" >> $GITHUB_STEP_SUMMARY
+              echo "database: ecotrack" >> $GITHUB_STEP_SUMMARY
+              echo "username: ecotrack" >> $GITHUB_STEP_SUMMARY
+              echo "password: <from-secret>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "# Redis Connection" >> $GITHUB_STEP_SUMMARY
+              echo "host: redis-master.data-services.svc.cluster.local" >> $GITHUB_STEP_SUMMARY
+              echo "port: 6379" >> $GITHUB_STEP_SUMMARY
+              echo "password: <from-secret>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "# Kafka Connection" >> $GITHUB_STEP_SUMMARY
+              echo "bootstrap-servers: kafka-bootstrap.data-services.svc.cluster.local:9092" >> $GITHUB_STEP_SUMMARY
+              echo "\\`\\`\\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Access Instructions:**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Get PostgreSQL password: \\`kubectl get secret -n data-services postgres-credentials -o jsonpath='{.data.password}' | base64 -d\\`" >> $GITHUB_STEP_SUMMARY
+              echo "2. Connect to PostgreSQL: \\`kubectl exec -it -n data-services postgres-primary-1 -- psql -U ecotrack -d ecotrack\\`" >> $GITHUB_STEP_SUMMARY
+              echo "3. Get Redis password: \\`kubectl get secret -n data-services redis-credentials -o jsonpath='{.data.password}' | base64 -d\\`" >> $GITHUB_STEP_SUMMARY
+              echo "4. Connect to Redis: \\`kubectl exec -it -n data-services redis-master-0 -- redis-cli\\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**EcoTrack Microservices Integration:**" >> $GITHUB_STEP_SUMMARY
+              echo "- **User Service**: PostgreSQL for user data, Redis for sessions" >> $GITHUB_STEP_SUMMARY
+              echo "- **Product Service**: PostgreSQL for product catalog" >> $GITHUB_STEP_SUMMARY
+              echo "- **Order Service**: PostgreSQL for orders, Kafka for events" >> $GITHUB_STEP_SUMMARY
+              echo "- **Payment Service**: PostgreSQL for transactions, Kafka for events" >> $GITHUB_STEP_SUMMARY
+              echo "- **Notification Service**: Redis for queues, Kafka for events" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Backup & Recovery:**" >> $GITHUB_STEP_SUMMARY
+              echo "- **PostgreSQL**: Automated daily backups with 30-day retention" >> $GITHUB_STEP_SUMMARY
+              echo "- **Redis**: RDB snapshots and AOF persistence" >> $GITHUB_STEP_SUMMARY
+              echo "- **Kafka**: Topic replication factor of 3 for durability" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Create databases and users for EcoTrack microservices" >> $GITHUB_STEP_SUMMARY
+              echo "2. Configure connection pools in Spring Boot applications" >> $GITHUB_STEP_SUMMARY
+              echo "3. Set up database migrations with Flyway or Liquibase" >> $GITHUB_STEP_SUMMARY
+              echo "4. Configure Kafka topics for event-driven architecture" >> $GITHUB_STEP_SUMMARY
+              echo "5. **🎉 Complete Platform Ready for EcoTrack Deployment!**" >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
+              echo "### ✅ Data Services Destroyed Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "💰 All database components have been cleaned up to save costs." >> $GITHUB_STEP_SUMMARY
+              echo "⚠️  **Warning**: All data has been permanently deleted." >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.validate-inputs.outputs.action }}" == "plan" ]]; then
+              echo "### 📊 Plan Generated Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "Review the plan output above before proceeding with apply." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Operation Failed!" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Slack Notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#platform-deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

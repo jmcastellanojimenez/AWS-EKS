@@ -1,0 +1,433 @@
+name: "Cost Optimization and Resource Usage Analysis"
+description: "Automated cost analysis, resource usage optimization, budget forecasting, and spending correlation analysis"
+version: "1.0.0"
+
+trigger:
+  type: "intelligent_scheduled"
+  schedule: "0 6 * * *"  # Daily at 6 AM UTC
+  
+  manual_trigger: true
+  
+  intelligent_triggers:
+    - type: "budget_threshold"
+      thresholds: [50, 75, 90, 100, 120]  # More granular thresholds
+      immediate_analysis: true
+      
+    - type: "cost_anomaly"
+      threshold: "15% above 7-day average"  # More sensitive
+      ml_based_detection: true
+      
+    - type: "optimization_opportunity"
+      conditions: ["resource_utilization_low", "unused_resources_detected"]
+      frequency: "real_time"
+  
+  events:
+    - "budget_threshold_exceeded"
+    - "cost_anomaly_detected"
+    - "resource_utilization_low"
+    - "spot_instance_interruption"
+    - "storage_lifecycle_opportunity"
+    - "right_sizing_opportunity"
+    - "unused_resource_detected"
+
+configuration:
+  cost_analysis_scope:
+    aws_services:
+      - "ec2"
+      - "eks"
+      - "ebs"
+      - "s3"
+      - "vpc"
+      - "elb"
+      - "cloudwatch"
+      - "route53"
+    
+    time_periods:
+      - "daily"
+      - "weekly"
+      - "monthly"
+      - "quarterly"
+    
+    cost_dimensions:
+      - "service"
+      - "environment"
+      - "resource_type"
+      - "availability_zone"
+      - "instance_type"
+      - "usage_type"
+  
+  optimization_targets:
+    compute:
+      target_utilization: 70
+      spot_instance_percentage: 80
+      right_sizing_threshold: 30
+    
+    storage:
+      lifecycle_transition_days: 30
+      unused_volume_threshold: 7
+      storage_class_optimization: true
+    
+    network:
+      data_transfer_optimization: true
+      load_balancer_consolidation: true
+      vpc_endpoint_usage: true
+
+actions:
+  - name: "cost_analysis_and_reporting"
+    description: "Comprehensive cost analysis across all AWS services"
+    commands:
+      - "aws ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31 --granularity MONTHLY --metrics BlendedCost"
+      - "aws ce get-dimension-values --dimension SERVICE --time-period Start=2024-01-01,End=2024-01-31"
+      - "aws ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31 --group-by Type=DIMENSION,Key=SERVICE"
+    
+    analysis:
+      - name: "service_cost_breakdown"
+        metrics:
+          - "ec2_instance_costs"
+          - "ebs_storage_costs"
+          - "s3_storage_costs"
+          - "data_transfer_costs"
+          - "load_balancer_costs"
+      
+      - name: "cost_trends"
+        calculations:
+          - "month_over_month_change"
+          - "year_over_year_change"
+          - "daily_cost_variance"
+          - "cost_per_resource_unit"
+      
+      - name: "cost_allocation"
+        dimensions:
+          - "environment_costs"
+          - "workflow_costs"
+          - "microservice_costs"
+          - "infrastructure_vs_application_costs"
+  
+  - name: "resource_utilization_analysis"
+    description: "Analyze resource utilization and identify optimization opportunities"
+    commands:
+      - "kubectl top nodes"
+      - "kubectl top pods -A --sort-by=cpu"
+      - "kubectl top pods -A --sort-by=memory"
+      - "aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization"
+    
+    analysis:
+      - name: "compute_utilization"
+        metrics:
+          - "node_cpu_utilization"
+          - "node_memory_utilization"
+          - "pod_resource_efficiency"
+          - "cluster_capacity_utilization"
+      
+      - name: "storage_utilization"
+        metrics:
+          - "persistent_volume_usage"
+          - "s3_bucket_growth_rate"
+          - "ebs_volume_utilization"
+          - "storage_class_distribution"
+      
+      - name: "network_utilization"
+        metrics:
+          - "data_transfer_patterns"
+          - "load_balancer_utilization"
+          - "vpc_endpoint_usage"
+          - "nat_gateway_utilization"
+  
+  - name: "spot_instance_optimization"
+    description: "Monitor and optimize spot instance usage"
+    commands:
+      - "aws ec2 describe-spot-instance-requests"
+      - "aws ec2 describe-spot-price-history --instance-types t3.large --product-descriptions 'Linux/UNIX'"
+      - "kubectl get nodes -l node-lifecycle=spot"
+    
+    analysis:
+      - name: "spot_instance_savings"
+        calculations:
+          - "current_spot_savings"
+          - "potential_additional_savings"
+          - "spot_interruption_rate"
+          - "spot_vs_ondemand_cost_comparison"
+      
+      - name: "spot_instance_recommendations"
+        suggestions:
+          - "optimal_instance_types"
+          - "diversification_opportunities"
+          - "interruption_mitigation_strategies"
+          - "mixed_capacity_optimization"
+  
+  - name: "storage_lifecycle_optimization"
+    description: "Optimize S3 storage lifecycle and costs"
+    commands:
+      - "aws s3api list-buckets --query 'Buckets[?contains(Name, `lgtm`)].Name'"
+      - "aws s3api get-bucket-lifecycle-configuration --bucket eks-learning-lab-dev-lgtm-prometheus"
+      - "aws s3 ls s3://eks-learning-lab-dev-lgtm-prometheus --recursive --human-readable --summarize"
+    
+    analysis:
+      - name: "storage_cost_breakdown"
+        metrics:
+          - "storage_class_costs"
+          - "data_transfer_costs"
+          - "request_costs"
+          - "lifecycle_transition_savings"
+      
+      - name: "lifecycle_optimization"
+        recommendations:
+          - "transition_to_ia_opportunities"
+          - "glacier_archival_candidates"
+          - "deletion_policy_optimization"
+          - "intelligent_tiering_benefits"
+  
+  - name: "right_sizing_analysis"
+    description: "Identify over-provisioned resources and right-sizing opportunities"
+    commands:
+      - "aws compute-optimizer get-ec2-instance-recommendations"
+      - "aws compute-optimizer get-ebs-volume-recommendations"
+      - "kubectl describe nodes | grep -E '(Allocated resources|Resource.*Requests.*Limits)'"
+    
+    analysis:
+      - name: "ec2_right_sizing"
+        recommendations:
+          - "instance_type_optimization"
+          - "cpu_utilization_based_sizing"
+          - "memory_utilization_based_sizing"
+          - "network_performance_requirements"
+      
+      - name: "kubernetes_right_sizing"
+        recommendations:
+          - "pod_resource_optimization"
+          - "hpa_configuration_tuning"
+          - "vpa_recommendations"
+          - "cluster_autoscaler_optimization"
+
+cost_optimization_recommendations:
+  compute_optimizations:
+    - name: "increase_spot_instance_usage"
+      condition: "spot_percentage < 80%"
+      potential_savings: "60-70%"
+      implementation: "Update node group configuration to increase spot capacity"
+      risk_level: "low"
+    
+    - name: "right_size_overprovisioned_instances"
+      condition: "cpu_utilization < 30% for 7 days"
+      potential_savings: "20-40%"
+      implementation: "Downgrade instance types or reduce replica counts"
+      risk_level: "medium"
+    
+    - name: "optimize_cluster_autoscaling"
+      condition: "nodes_underutilized > 2 for 24h"
+      potential_savings: "15-25%"
+      implementation: "Adjust cluster autoscaler scale-down parameters"
+      risk_level: "low"
+  
+  storage_optimizations:
+    - name: "implement_s3_lifecycle_policies"
+      condition: "standard_storage > 30 days old"
+      potential_savings: "60-80%"
+      implementation: "Configure automatic transition to IA and Glacier"
+      risk_level: "low"
+    
+    - name: "optimize_ebs_volume_types"
+      condition: "using_gp2_volumes"
+      potential_savings: "20%"
+      implementation: "Migrate from gp2 to gp3 volumes"
+      risk_level: "low"
+    
+    - name: "cleanup_unused_volumes"
+      condition: "volume_unattached > 7 days"
+      potential_savings: "100% of unused volume costs"
+      implementation: "Delete unattached EBS volumes after backup"
+      risk_level: "medium"
+  
+  network_optimizations:
+    - name: "consolidate_load_balancers"
+      condition: "multiple_albs_low_utilization"
+      potential_savings: "$16/month per ALB"
+      implementation: "Use shared ALB with host-based routing"
+      risk_level: "medium"
+    
+    - name: "implement_vpc_endpoints"
+      condition: "high_nat_gateway_usage"
+      potential_savings: "$45/month per TB"
+      implementation: "Create VPC endpoints for S3, ECR, EKS"
+      risk_level: "low"
+
+budget_forecasting:
+  forecasting_models:
+    - name: "linear_trend_forecast"
+      method: "linear_regression"
+      time_horizon: "3_months"
+      accuracy_target: "85%"
+    
+    - name: "seasonal_forecast"
+      method: "seasonal_decomposition"
+      time_horizon: "12_months"
+      factors: ["business_cycles", "traffic_patterns"]
+    
+    - name: "growth_based_forecast"
+      method: "exponential_smoothing"
+      growth_assumptions:
+        - "user_growth_rate: 10% monthly"
+        - "data_growth_rate: 15% monthly"
+        - "feature_expansion: 20% quarterly"
+  
+  budget_alerts:
+    - threshold: "50%"
+      action: "informational_alert"
+      recipients: ["platform-team"]
+    
+    - threshold: "80%"
+      action: "warning_alert"
+      recipients: ["platform-team", "engineering-manager"]
+    
+    - threshold: "100%"
+      action: "critical_alert"
+      recipients: ["platform-team", "engineering-manager", "finance-team"]
+    
+    - threshold: "120%"
+      action: "emergency_alert"
+      recipients: ["all-stakeholders"]
+      escalation: "immediate_review_required"
+
+spending_correlation_analysis:
+  correlation_metrics:
+    - name: "cost_vs_performance"
+      x_axis: "infrastructure_cost"
+      y_axis: "application_performance_metrics"
+      analysis: "cost_efficiency_ratio"
+    
+    - name: "cost_vs_usage"
+      x_axis: "monthly_cost"
+      y_axis: "resource_utilization"
+      analysis: "resource_efficiency_score"
+    
+    - name: "cost_vs_business_metrics"
+      x_axis: "infrastructure_cost"
+      y_axis: "business_kpis"
+      analysis: "roi_calculation"
+  
+  anomaly_detection:
+    - metric: "daily_cost_variance"
+      threshold: "20% above 7-day average"
+      action: "investigate_cost_spike"
+    
+    - metric: "service_cost_anomaly"
+      threshold: "50% increase in single service"
+      action: "service_specific_analysis"
+    
+    - metric: "resource_utilization_drop"
+      threshold: "30% decrease in utilization"
+      action: "right_sizing_opportunity"
+
+cost_monitoring_dashboard:
+  real_time_metrics:
+    - "current_monthly_spend"
+    - "daily_cost_trend"
+    - "budget_utilization_percentage"
+    - "cost_per_service"
+    - "optimization_savings_realized"
+  
+  cost_efficiency_kpis:
+    - "cost_per_request"
+    - "cost_per_user"
+    - "cost_per_transaction"
+    - "infrastructure_cost_percentage"
+    - "optimization_savings_rate"
+  
+  alerts_and_notifications:
+    - "budget_threshold_alerts"
+    - "cost_anomaly_notifications"
+    - "optimization_opportunity_alerts"
+    - "savings_achievement_reports"
+
+integration:
+  aws_cost_explorer:
+    enabled: true
+    api_access: true
+    custom_reports: true
+  
+  aws_budgets:
+    enabled: true
+    budget_alerts: true
+    cost_anomaly_detection: true
+  
+  prometheus:
+    enabled: true
+    custom_cost_metrics: true
+    cost_correlation_metrics: true
+  
+  grafana:
+    enabled: true
+    cost_dashboards: true
+    cost_alerting: true
+  
+  slack:
+    enabled: false
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    channel: "#cost-optimization"
+
+automation:
+  automated_optimizations:
+    - name: "cleanup_unused_resources"
+      frequency: "weekly"
+      resources: ["unattached_ebs_volumes", "unused_elastic_ips", "idle_load_balancers"]
+      approval_required: true
+    
+    - name: "apply_lifecycle_policies"
+      frequency: "daily"
+      scope: ["s3_buckets"]
+      approval_required: false
+    
+    - name: "right_size_recommendations"
+      frequency: "weekly"
+      analysis: ["compute_optimizer_recommendations"]
+      approval_required: true
+  
+  cost_governance:
+    - name: "budget_enforcement"
+      action: "prevent_resource_creation"
+      trigger: "budget_exceeded_120%"
+    
+    - name: "approval_workflows"
+      resources: ["large_instances", "expensive_storage"]
+      approval_required: true
+      approvers: ["engineering-manager", "finance-team"]
+
+reporting:
+  cost_optimization_report:
+    frequency: "monthly"
+    format: "pdf"
+    distribution: ["platform-team", "engineering-manager", "finance-team"]
+    
+    sections:
+      - "executive_summary"
+      - "cost_trends_analysis"
+      - "optimization_opportunities"
+      - "savings_realized"
+      - "budget_forecast"
+      - "recommendations"
+  
+  roi_analysis:
+    optimization_investments: "time_spent_on_optimization"
+    savings_realized: "monthly_cost_reduction"
+    roi_calculation: "savings / investment_cost"
+    payback_period: "investment_cost / monthly_savings"
+
+cost_allocation:
+  allocation_methods:
+    - name: "resource_tagging"
+      tags: ["environment", "project", "team", "cost-center"]
+      accuracy: "high"
+    
+    - name: "namespace_based"
+      kubernetes_namespaces: true
+      accuracy: "medium"
+    
+    - name: "usage_based"
+      metrics: ["cpu_hours", "memory_gb_hours", "storage_gb_hours"]
+      accuracy: "high"
+  
+  chargeback_reports:
+    - "environment_costs"
+    - "team_costs"
+    - "project_costs"
+    - "microservice_costs"

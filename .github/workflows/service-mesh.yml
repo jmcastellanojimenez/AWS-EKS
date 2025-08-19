@@ -1,0 +1,378 @@
+name: 🛡️ Service Mesh
+
+# MANUAL EXECUTION ONLY - No automatic triggers on push/PR
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Infrastructure Action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+        - plan
+        - apply  
+        - destroy
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      confirm_destroy:
+        description: 'For DESTROY: type CONFIRM-DESTROY'
+        required: false
+        type: string
+      auto_approve:
+        description: 'Auto-approve apply (use with caution)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.validate.outputs.action }}
+      environment: ${{ steps.validate.outputs.environment }}
+      should-proceed: ${{ steps.validate.outputs.should-proceed }}
+    steps:
+      - name: Validate Inputs
+        id: validate
+        run: |
+          echo "action=${{ inputs.action }}" >> $GITHUB_OUTPUT
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          
+          # Validate destroy confirmation
+          if [[ "${{ inputs.action }}" == "destroy" ]]; then
+            if [[ "${{ inputs.confirm_destroy }}" != "CONFIRM-DESTROY" ]]; then
+              echo "❌ Destroy action requires 'CONFIRM-DESTROY' confirmation"
+              echo "should-proceed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "✅ Destroy confirmation validated"
+          fi
+          
+          echo "should-proceed=true" >> $GITHUB_OUTPUT
+
+  check-prerequisites:
+    name: 🔍 Check Prerequisites
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    if: needs.validate-inputs.outputs.should-proceed == 'true'
+    outputs:
+      foundation-ready: ${{ steps.check.outputs.foundation-ready }}
+      ingress-ready: ${{ steps.check.outputs.ingress-ready }}
+      observability-ready: ${{ steps.check.outputs.observability-ready }}
+      security-ready: ${{ steps.check.outputs.security-ready }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CheckPrerequisites
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🔍 Check Prerequisites
+        id: check
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          
+          # Check Foundation Platform (Required)
+          if terraform state list | grep -q "module.eks.aws_eks_cluster"; then
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+            if [[ -n "$cluster_name" ]]; then
+              echo "✅ Foundation Platform found: $cluster_name"
+              echo "foundation-ready=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Foundation Platform cluster name not found"
+              echo "foundation-ready=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "❌ Foundation Platform not deployed. Deploy Workflow 1 first."
+            echo "foundation-ready=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check Ingress Stack (Recommended for external access)
+          if terraform state list | grep -q "module.ambassador"; then
+            echo "✅ Ingress + API Gateway Stack found"
+            echo "ingress-ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Ingress + API Gateway Stack not found. Service Mesh will work without it."
+            echo "ingress-ready=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check Observability Stack (Highly recommended for service mesh monitoring)
+          if terraform state list | grep -q "module.lgtm_observability"; then
+            echo "✅ LGTM Observability Stack found"
+            echo "observability-ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  LGTM Observability Stack not found. Service mesh monitoring will be limited."
+            echo "observability-ready=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check Security Stack (Recommended for enhanced security)
+          if terraform state list | grep -q "module.security"; then
+            echo "✅ Security Foundation found"
+            echo "security-ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  Security Foundation not found. Service mesh will provide basic security."
+            echo "security-ready=false" >> $GITHUB_OUTPUT
+          fi
+
+  terraform-operation:
+    name: 🛡️ Deploy Service Mesh
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, check-prerequisites]
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.check-prerequisites.outputs.foundation-ready == 'true'
+    environment: ${{ needs.validate-inputs.outputs.environment }}
+    outputs:
+      service-mesh-ready: ${{ steps.output.outputs.service-mesh-ready }}
+      istio-version: ${{ steps.output.outputs.istio-version }}
+      kiali-endpoint: ${{ steps.output.outputs.kiali-endpoint }}
+      jaeger-endpoint: ${{ steps.output.outputs.jaeger-endpoint }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-ServiceMesh
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 📋 Terraform Init
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+
+      - name: ✅ Terraform Validate
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: terraform validate
+
+      - name: 📊 Terraform Plan
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          if [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
+            terraform plan -destroy -out=tfplan -target=module.service_mesh
+          else
+            terraform plan -out=tfplan -target=module.service_mesh
+          fi
+
+      - name: 🚀 Terraform Apply
+        if: needs.validate-inputs.outputs.action == 'apply'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          if [[ "${{ inputs.auto_approve }}" == "true" ]]; then
+            terraform apply tfplan
+          else
+            echo "❌ Manual approval required. Set auto_approve=true to proceed."
+            exit 1
+          fi
+
+      - name: 🗑️ Terraform Destroy
+        if: needs.validate-inputs.outputs.action == 'destroy'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        timeout-minutes: 45
+        run: terraform apply tfplan
+
+      - name: 📤 Get Service Mesh Information
+        id: output
+        if: needs.validate-inputs.outputs.action == 'apply'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          # Get Service Mesh stack information
+          service_mesh_ready=$(terraform output -raw service_mesh_ready 2>/dev/null || echo "false")
+          istio_version=$(terraform output -raw istio_version 2>/dev/null || echo "")
+          kiali_endpoint=$(terraform output -raw kiali_endpoint 2>/dev/null || echo "")
+          jaeger_endpoint=$(terraform output -raw jaeger_endpoint 2>/dev/null || echo "")
+          
+          echo "service-mesh-ready=$service_mesh_ready" >> $GITHUB_OUTPUT
+          echo "istio-version=$istio_version" >> $GITHUB_OUTPUT
+          echo "kiali-endpoint=$kiali_endpoint" >> $GITHUB_OUTPUT
+          echo "jaeger-endpoint=$jaeger_endpoint" >> $GITHUB_OUTPUT
+          
+          echo "✅ Service Mesh deployed successfully!"
+          echo "🛡️ Istio Version: $istio_version"
+          echo "📊 Kiali: $kiali_endpoint"
+          echo "🔍 Jaeger: $jaeger_endpoint"
+
+      - name: 🔧 Configure kubectl and Verify Stack
+        if: needs.validate-inputs.outputs.action == 'apply'
+        run: |
+          cluster_name=$(cd terraform/environments/${{ needs.validate-inputs.outputs.environment }} && terraform output -raw cluster_name)
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
+            
+            echo "🔍 Verifying Service Mesh Stack..."
+            
+            # Wait a bit for pods to start
+            sleep 60
+            
+            # Check Istio system namespace
+            echo "🛡️ Checking Istio Control Plane..."
+            kubectl get namespace istio-system
+            kubectl get pods -n istio-system
+            kubectl get svc -n istio-system
+            
+            # Check Istio installation
+            echo "📋 Checking Istio Installation..."
+            kubectl get mutatingwebhookconfigurations | grep istio || echo "Istio webhooks not ready yet"
+            kubectl get validatingwebhookconfigurations | grep istio || echo "Istio validation webhooks not ready yet"
+            
+            # Check Istio gateways
+            echo "🌐 Checking Istio Gateways..."
+            kubectl get gateways -A || echo "No gateways configured yet"
+            kubectl get virtualservices -A || echo "No virtual services configured yet"
+            
+            # Check Kiali (if enabled)
+            echo "📊 Checking Kiali..."
+            kubectl get pods -n istio-system -l app=kiali || echo "Kiali not enabled or not ready yet"
+            kubectl get svc -n istio-system kiali || echo "Kiali service not ready yet"
+            
+            # Check Jaeger (if enabled)
+            echo "🔍 Checking Jaeger..."
+            kubectl get pods -n istio-system -l app=jaeger || echo "Jaeger not enabled or not ready yet"
+            kubectl get svc -n istio-system jaeger-query || echo "Jaeger service not ready yet"
+            
+            # Check Prometheus integration
+            echo "📈 Checking Prometheus Integration..."
+            kubectl get servicemonitors -n istio-system || echo "Service monitors not configured yet"
+            
+            # Check proxy status
+            echo "🔧 Checking Envoy Proxy Status..."
+            kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].name}{"\n"}{end}' | grep istio-proxy || echo "No sidecar proxies injected yet"
+            
+            echo "✅ Service mesh verification completed!"
+          fi
+
+  summary:
+    name: 📋 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, check-prerequisites, terraform-operation]
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 🛡️ Service Mesh Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action**: ${{ needs.validate-inputs.outputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ needs.validate-inputs.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Foundation Check**: ${{ needs.check-prerequisites.outputs.foundation-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ingress Stack**: ${{ needs.check-prerequisites.outputs.ingress-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Observability Stack**: ${{ needs.check-prerequisites.outputs.observability-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Security Stack**: ${{ needs.check-prerequisites.outputs.security-ready }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ needs.terraform-operation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.check-prerequisites.outputs.foundation-ready }}" != "true" ]]; then
+            echo "### ❌ Foundation Platform Required" >> $GITHUB_STEP_SUMMARY
+            echo "Deploy **🏗️ Workflow 1: Foundation Platform** first before running this workflow." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ needs.terraform-operation.result }}" == "success" ]]; then
+            if [[ "${{ needs.validate-inputs.outputs.action }}" == "apply" ]]; then
+              echo "### ✅ Service Mesh Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Components Deployed:**" >> $GITHUB_STEP_SUMMARY
+              echo "- 🛡️ **Istio Control Plane**: Service mesh control plane with Pilot, Citadel, Galley" >> $GITHUB_STEP_SUMMARY
+              echo "- 🌐 **Istio Gateway**: Ingress and egress traffic management" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔒 **mTLS**: Automatic mutual TLS between all services" >> $GITHUB_STEP_SUMMARY
+              echo "- 📊 **Kiali**: Service mesh observability and management" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔍 **Jaeger**: Distributed tracing (if not using Tempo)" >> $GITHUB_STEP_SUMMARY
+              echo "- 📈 **Prometheus Integration**: Metrics collection from Envoy proxies" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Resource Allocation:**" >> $GITHUB_STEP_SUMMARY
+              echo "- Istio Pilot: ~500m CPU, ~2Gi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- Istio Proxy (per pod): ~100m CPU, ~128Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- Kiali: ~100m CPU, ~256Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- Jaeger: ~200m CPU, ~512Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- **Control Plane Total**: ~800m CPU, ~2.9Gi memory" >> $GITHUB_STEP_SUMMARY
+              echo "- **Per Service Overhead**: ~100m CPU, ~128Mi memory" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Service Mesh Features:**" >> $GITHUB_STEP_SUMMARY
+              echo "- **Zero-Trust Security**: Automatic mTLS for all service-to-service communication" >> $GITHUB_STEP_SUMMARY
+              echo "- **Traffic Management**: Load balancing, circuit breaking, retries, timeouts" >> $GITHUB_STEP_SUMMARY
+              echo "- **Observability**: Metrics, logs, and traces for all service interactions" >> $GITHUB_STEP_SUMMARY
+              echo "- **Policy Enforcement**: Rate limiting, access control, security policies" >> $GITHUB_STEP_SUMMARY
+              echo "- **Canary Deployments**: Traffic splitting for safe deployments" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Access Instructions:**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Port-forward to Kiali: \\`kubectl port-forward -n istio-system svc/kiali 20001:20001\\`" >> $GITHUB_STEP_SUMMARY
+              echo "2. Access Kiali: http://localhost:20001 (admin/admin)" >> $GITHUB_STEP_SUMMARY
+              echo "3. Port-forward to Jaeger: \\`kubectl port-forward -n istio-system svc/jaeger-query 16686:16686\\`" >> $GITHUB_STEP_SUMMARY
+              echo "4. Access Jaeger: http://localhost:16686" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Enable Sidecar Injection:**" >> $GITHUB_STEP_SUMMARY
+              echo "\\`\\`\\`bash" >> $GITHUB_STEP_SUMMARY
+              echo "# Enable automatic sidecar injection for EcoTrack namespace" >> $GITHUB_STEP_SUMMARY
+              echo "kubectl label namespace ecotrack istio-injection=enabled" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "# Restart deployments to inject sidecars" >> $GITHUB_STEP_SUMMARY
+              echo "kubectl rollout restart deployment -n ecotrack" >> $GITHUB_STEP_SUMMARY
+              echo "\\`\\`\\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Traffic Management Examples:**" >> $GITHUB_STEP_SUMMARY
+              echo "- **Circuit Breaker**: Automatic failure detection and recovery" >> $GITHUB_STEP_SUMMARY
+              echo "- **Retry Policies**: Configurable retry logic for failed requests" >> $GITHUB_STEP_SUMMARY
+              echo "- **Load Balancing**: Round-robin, least-request, random algorithms" >> $GITHUB_STEP_SUMMARY
+              echo "- **Timeout Management**: Request and connection timeout controls" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+              echo "1. Enable sidecar injection for EcoTrack microservices namespace" >> $GITHUB_STEP_SUMMARY
+              echo "2. Configure Istio Gateway for external traffic" >> $GITHUB_STEP_SUMMARY
+              echo "3. Set up VirtualServices for traffic routing" >> $GITHUB_STEP_SUMMARY
+              echo "4. Configure DestinationRules for load balancing and circuit breaking" >> $GITHUB_STEP_SUMMARY
+              echo "5. Ready for Workflow 7: Data Services" >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
+              echo "### ✅ Service Mesh Destroyed Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "💰 Istio and all service mesh components have been cleaned up to save costs." >> $GITHUB_STEP_SUMMARY
+              echo "⚠️  **Warning**: Services will lose mTLS and advanced traffic management." >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.validate-inputs.outputs.action }}" == "plan" ]]; then
+              echo "### 📊 Plan Generated Successfully!" >> $GITHUB_STEP_SUMMARY
+              echo "Review the plan output above before proceeding with apply." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Operation Failed!" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Slack Notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#platform-deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

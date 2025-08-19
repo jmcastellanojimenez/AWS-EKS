@@ -1,0 +1,39 @@
+# Development Environment Configuration
+# Copy this file to terraform.tfvars and update with your values
+
+# Project Configuration
+project_name = "eks-platform"
+environment  = "dev"
+owner        = "platform-team"
+aws_region   = "us-east-1"
+
+# Networking Configuration
+vpc_cidr                 = "10.0.0.0/16"
+private_subnet_cidrs     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+public_subnet_cidrs      = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+availability_zones_count = 3
+single_nat_gateway       = true  # Cost optimization for dev
+
+# EKS Configuration
+kubernetes_version = "1.28"
+
+# Domain and DNS Configuration
+domain_name           = "your-domain.dev"
+letsencrypt_email     = "admin@your-domain.com"
+cloudflare_email      = "admin@your-domain.com"
+cloudflare_api_token  = "your-cloudflare-api-token"
+
+# Observability Configuration
+grafana_admin_password = "your-secure-password"
+
+# GitOps Configuration
+gitops_repo_url    = "https://github.com/your-org/gitops-config"
+gitops_repo_branch = "main"
+
+# Optional: Slack Integration
+slack_webhook_url = "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+
+# Database Configuration
+postgres_password = "your-secure-postgres-password"
+postgres_backup_access_key = "your-aws-access-key"
+postgres_backup_secret_key = "your-aws-secret-key"

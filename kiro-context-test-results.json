@@ -1,0 +1,257 @@
+{
+  "summary": {
+    "total_tests": 8,
+    "passed_tests": 0,
+    "failed_tests": 8,
+    "pass_rate": 0.0,
+    "results": [
+      {
+        "test": "Workflow Dependencies and Deployment Sequence",
+        "passed": false,
+        "missing_keywords": [
+          "Foundation Platform",
+          "Workflow 1",
+          "Ingress",
+          "Workflow 2",
+          "Observability",
+          "Workflow 3",
+          "parallel",
+          "dependencies",
+          "sequential"
+        ]
+      },
+      {
+        "test": "Resource Planning and Allocation",
+        "passed": false,
+        "missing_keywords": [
+          "6-20 CPU cores",
+          "24-80GB RAM",
+          "spot instance",
+          "80%",
+          "auto-scaling",
+          "microservices",
+          "t3.large"
+        ]
+      },
+      {
+        "test": "Cross-Workflow Integration Points",
+        "passed": false,
+        "missing_keywords": [
+          "shared VPC",
+          "observability",
+          "service mesh",
+          "GitOps",
+          "integration points",
+          "monitoring",
+          "Istio",
+          "ArgoCD"
+        ]
+      },
+      {
+        "test": "Development Environment Configuration",
+        "passed": false,
+        "missing_keywords": [
+          "90% spot",
+          "relaxed",
+          "DEBUG",
+          "aggressive",
+          "development-hours scaling",
+          "cost optimization"
+        ]
+      },
+      {
+        "test": "Production Environment Configuration",
+        "passed": false,
+        "missing_keywords": [
+          "50% spot",
+          "conservative",
+          "strict security",
+          "high availability",
+          "audit logging",
+          "disaster recovery"
+        ]
+      },
+      {
+        "test": "EcoTrack Application Architecture",
+        "passed": false,
+        "missing_keywords": [
+          "5 microservices",
+          "user-service",
+          "product-service",
+          "order-service",
+          "payment-service",
+          "notification-service",
+          "Spring Boot",
+          "Actuator",
+          "PostgreSQL",
+          "Redis"
+        ]
+      },
+      {
+        "test": "Service Mesh Integration",
+        "passed": false,
+        "missing_keywords": [
+          "Istio",
+          "sidecar injection",
+          "mTLS",
+          "traffic management",
+          "circuit breaking",
+          "observability"
+        ]
+      },
+      {
+        "test": "Spot Instance Management",
+        "passed": false,
+        "missing_keywords": [
+          "diversified",
+          "interruption handling",
+          "60-70% savings",
+          "mixed capacity",
+          "multiple AZ",
+          "pod disruption budgets"
+        ]
+      }
+    ],
+    "execution_time": 0.000228
+  },
+  "test_results": [
+    {
+      "test_name": "Workflow Dependencies and Deployment Sequence",
+      "query": "What is the correct deployment sequence for all 7 infrastructure workflows and why?",
+      "expected_keywords": [
+        "Foundation Platform",
+        "Workflow 1",
+        "Ingress",
+        "Workflow 2",
+        "Observability",
+        "Workflow 3",
+        "parallel",
+        "dependencies",
+        "sequential"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['Foundation Platform', 'Workflow 1', 'Ingress', 'Workflow 2', 'Observability', 'Workflow 3', 'parallel', 'dependencies', 'sequential']",
+      "timestamp": "2025-08-19T10:43:14.653451"
+    },
+    {
+      "test_name": "Resource Planning and Allocation",
+      "query": "How should I plan resource allocation across all 7 workflows for a production environment?",
+      "expected_keywords": [
+        "6-20 CPU cores",
+        "24-80GB RAM",
+        "spot instance",
+        "80%",
+        "auto-scaling",
+        "microservices",
+        "t3.large"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['6-20 CPU cores', '24-80GB RAM', 'spot instance', '80%', 'auto-scaling', 'microservices', 't3.large']",
+      "timestamp": "2025-08-19T10:43:14.653471"
+    },
+    {
+      "test_name": "Cross-Workflow Integration Points",
+      "query": "How do the 7 workflows integrate with each other, and what are the key integration points?",
+      "expected_keywords": [
+        "shared VPC",
+        "observability",
+        "service mesh",
+        "GitOps",
+        "integration points",
+        "monitoring",
+        "Istio",
+        "ArgoCD"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['shared VPC', 'observability', 'service mesh', 'GitOps', 'integration points', 'monitoring', 'Istio', 'ArgoCD']",
+      "timestamp": "2025-08-19T10:43:14.653487"
+    },
+    {
+      "test_name": "Development Environment Configuration",
+      "query": "What are the specific configuration differences for the development environment?",
+      "expected_keywords": [
+        "90% spot",
+        "relaxed",
+        "DEBUG",
+        "aggressive",
+        "development-hours scaling",
+        "cost optimization"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['90% spot', 'relaxed', 'DEBUG', 'aggressive', 'development-hours scaling', 'cost optimization']",
+      "timestamp": "2025-08-19T10:43:14.653561"
+    },
+    {
+      "test_name": "Production Environment Configuration",
+      "query": "What are the key differences in production environment configuration compared to development?",
+      "expected_keywords": [
+        "50% spot",
+        "conservative",
+        "strict security",
+        "high availability",
+        "audit logging",
+        "disaster recovery"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['50% spot', 'conservative', 'strict security', 'high availability', 'audit logging', 'disaster recovery']",
+      "timestamp": "2025-08-19T10:43:14.653576"
+    },
+    {
+      "test_name": "EcoTrack Application Architecture",
+      "query": "Describe the EcoTrack microservices architecture and how it integrates with the platform.",
+      "expected_keywords": [
+        "5 microservices",
+        "user-service",
+        "product-service",
+        "order-service",
+        "payment-service",
+        "notification-service",
+        "Spring Boot",
+        "Actuator",
+        "PostgreSQL",
+        "Redis"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['5 microservices', 'user-service', 'product-service', 'order-service', 'payment-service', 'notification-service', 'Spring Boot', 'Actuator', 'PostgreSQL', 'Redis']",
+      "timestamp": "2025-08-19T10:43:14.653597"
+    },
+    {
+      "test_name": "Service Mesh Integration",
+      "query": "How does the service mesh integrate with the EcoTrack microservices?",
+      "expected_keywords": [
+        "Istio",
+        "sidecar injection",
+        "mTLS",
+        "traffic management",
+        "circuit breaking",
+        "observability"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['Istio', 'sidecar injection', 'mTLS', 'traffic management', 'circuit breaking', 'observability']",
+      "timestamp": "2025-08-19T10:43:14.653612"
+    },
+    {
+      "test_name": "Spot Instance Management",
+      "query": "How should I optimize spot instance usage for cost savings while maintaining reliability?",
+      "expected_keywords": [
+        "diversified",
+        "interruption handling",
+        "60-70% savings",
+        "mixed capacity",
+        "multiple AZ",
+        "pod disruption budgets"
+      ],
+      "response": "PLACEHOLDER - This would be Kiro's actual response",
+      "passed": false,
+      "notes": "Missing keywords: ['diversified', 'interruption handling', '60-70% savings', 'mixed capacity', 'multiple AZ', 'pod disruption budgets']",
+      "timestamp": "2025-08-19T10:43:14.653624"
+    }
+  ]
+}

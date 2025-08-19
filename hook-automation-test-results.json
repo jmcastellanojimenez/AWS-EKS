@@ -1,0 +1,134 @@
+{
+  "timestamp": "2025-08-19T15:40:48.323558",
+  "summary": {
+    "total_hooks": 14,
+    "hooks_tested": 14,
+    "trigger_success_rate": 71.42857142857143,
+    "execution_success_rate": 100.0,
+    "integration_success_rate": 35.714285714285715,
+    "overall_success_rate": 69.04761904761905
+  },
+  "details": [
+    {
+      "name": "autopilot-operations",
+      "tests": [
+        "\u274c Invalid cron schedule: */5 * * * *",
+        "\u2705 File patterns configured",
+        "\u2705 15 actions configured",
+        "\u274c No integration section found"
+      ]
+    },
+    {
+      "name": "knowledge-management",
+      "tests": [
+        "\u2705 Valid cron schedule: 0 9 * * 1",
+        "\u2705 File patterns configured",
+        "\u2705 5 actions configured",
+        "\u2705 Integrations: slack"
+      ]
+    },
+    {
+      "name": "deployment-validation",
+      "tests": [
+        "\u274c Invalid trigger type: intelligent_file_change",
+        "\u2705 File patterns configured",
+        "\u2705 25 actions configured",
+        "\u2705 Integrations: prometheus, kubernetes, slack"
+      ]
+    },
+    {
+      "name": "environment-staging-monitoring",
+      "tests": [
+        "\u274c Invalid cron schedule: */5 * * * *",
+        "\u2705 3 actions configured",
+        "\u274c No integration section found"
+      ]
+    },
+    {
+      "name": "continuous-improvement",
+      "tests": [
+        "\u2705 Valid trigger type: intelligent_scheduled",
+        "\u2705 Valid cron schedule: 0 2 * * 1",
+        "\u2705 33 actions configured",
+        "\u274c No integrations configured"
+      ]
+    },
+    {
+      "name": "safety-controls-escalation",
+      "tests": [
+        "\u274c Invalid cron schedule: */15 * * * *",
+        "\u2705 20 actions configured",
+        "\u274c No integrations configured"
+      ]
+    },
+    {
+      "name": "environment-prod-monitoring",
+      "tests": [
+        "\u274c Invalid cron schedule: */2 * * * *",
+        "\u2705 3 actions configured",
+        "\u274c No integration section found"
+      ]
+    },
+    {
+      "name": "infrastructure-monitoring",
+      "tests": [
+        "\u2705 Valid trigger type: hybrid",
+        "\u274c Invalid cron schedule: 0 */4 * * *",
+        "\u2705 13 actions configured",
+        "\u2705 Integrations: prometheus, grafana, slack"
+      ]
+    },
+    {
+      "name": "cost-optimization",
+      "tests": [
+        "\u2705 Valid trigger type: intelligent_scheduled",
+        "\u2705 Valid cron schedule: 0 6 * * *",
+        "\u2705 39 actions configured",
+        "\u2705 Integrations: prometheus, grafana, slack"
+      ]
+    },
+    {
+      "name": "supervised-operations",
+      "tests": [
+        "\u274c Invalid cron schedule: 0 */6 * * *",
+        "\u2705 File patterns configured",
+        "\u2705 10 actions configured",
+        "\u274c No integration section found"
+      ]
+    },
+    {
+      "name": "improvement-suggestions",
+      "tests": [
+        "\u274c Invalid trigger type: intelligent_multi_source",
+        "\u2705 Valid cron schedule: 0 3 * * 0",
+        "\u2705 9 actions configured",
+        "\u274c No integrations configured"
+      ]
+    },
+    {
+      "name": "documentation-maintenance",
+      "tests": [
+        "\u2705 File patterns configured",
+        "\u2705 5 actions configured",
+        "\u274c No integration section found"
+      ]
+    },
+    {
+      "name": "security-compliance",
+      "tests": [
+        "\u2705 Valid trigger type: scheduled",
+        "\u2705 Valid cron schedule: 0 2 * * *",
+        "\u2705 32 actions configured",
+        "\u2705 Integrations: prometheus, kubernetes, slack"
+      ]
+    },
+    {
+      "name": "environment-dev-monitoring",
+      "tests": [
+        "\u274c Invalid cron schedule: */10 * * * *",
+        "\u2705 3 actions configured",
+        "\u274c No integration section found"
+      ]
+    }
+  ]
+}
