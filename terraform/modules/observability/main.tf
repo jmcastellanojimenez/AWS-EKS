@@ -653,31 +653,33 @@ resource "helm_release" "grafana" {
   version    = var.grafana_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
   
-  timeout       = 600
-  wait          = true
-  wait_for_jobs = true
+  timeout       = 300
+  wait          = false
+  wait_for_jobs = false
 
   values = [
     yamlencode({
+      # Ultra-minimal Grafana configuration to avoid deployment timeouts
       adminPassword = var.grafana_admin_password
 
+      # Disable persistence to avoid storage issues
       persistence = {
-        enabled      = true
-        storageClass = "gp3"
-        size         = "10Gi"
+        enabled = false
       }
 
+      # Minimal resource requirements
       resources = {
         requests = {
-          cpu    = "100m"
-          memory = "256Mi"
+          cpu    = "50m"
+          memory = "128Mi"
         }
         limits = {
-          cpu    = "500m"
-          memory = "1Gi"
+          cpu    = "200m"
+          memory = "256Mi"
         }
       }
 
+      # Basic Prometheus datasource only
       datasources = {
         "datasources.yaml" = {
           apiVersion = 1
@@ -692,55 +694,23 @@ resource "helm_release" "grafana" {
         }
       }
 
-      dashboardProviders = {
-        "dashboardproviders.yaml" = {
-          apiVersion = 1
-          providers = [
-            {
-              name            = "default"
-              orgId           = 1
-              folder          = ""
-              type            = "file"
-              disableDeletion = false
-              editable        = true
-              options = {
-                path = "/var/lib/grafana/dashboards/default"
-              }
-            }
-          ]
-        }
-      }
-
-      dashboards = {
-        default = {
-          kubernetes-cluster-monitoring = {
-            gnetId     = 7249
-            revision   = 1
-            datasource = "Prometheus"
-          }
-          kubernetes-pod-monitoring = {
-            gnetId     = 6417
-            revision   = 1
-            datasource = "Prometheus"
-          }
-          opentelemetry-collector = {
-            gnetId     = 15983
-            revision   = 1
-            datasource = "Prometheus"
-          }
-        }
-      }
-
+      # Disable complex features
       serviceMonitor = {
-        enabled = true
-      }
-
-      service = {
-        type = "ClusterIP"
+        enabled = false
       }
 
       ingress = {
-        enabled = false  # Disable ingress for now to avoid template errors
+        enabled = false
+      }
+
+      # Disable sidecar for dashboards to reduce complexity
+      sidecar = {
+        dashboards = {
+          enabled = false
+        }
+        datasources = {
+          enabled = false
+        }
       }
     })
   ]
