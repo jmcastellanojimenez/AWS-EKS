@@ -73,6 +73,10 @@ resource "helm_release" "prometheus_stack" {
   chart      = "kube-prometheus-stack"
   version    = var.prometheus_stack_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  
+  timeout       = 900
+  wait          = true
+  wait_for_jobs = true
 
   values = [
     yamlencode({
@@ -175,6 +179,10 @@ resource "helm_release" "mimir" {
   chart      = "mimir-distributed"
   version    = var.mimir_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  
+  timeout       = 900
+  wait          = true
+  wait_for_jobs = true
 
   values = [
     yamlencode({
@@ -321,7 +329,7 @@ resource "helm_release" "mimir" {
     })
   ]
 
-  depends_on = [kubernetes_namespace.observability]
+  depends_on = [helm_release.tempo]
 }
 
 # Loki for logs
@@ -331,6 +339,10 @@ resource "helm_release" "loki" {
   chart      = "loki"
   version    = var.loki_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  
+  timeout       = 900
+  wait          = true
+  wait_for_jobs = true
 
   values = [
     yamlencode({
@@ -441,7 +453,7 @@ resource "helm_release" "loki" {
     })
   ]
 
-  depends_on = [kubernetes_namespace.observability]
+  depends_on = [helm_release.prometheus_stack]
 }
 
 # Promtail for log collection
@@ -451,6 +463,10 @@ resource "helm_release" "promtail" {
   chart      = "promtail"
   version    = var.promtail_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  
+  timeout       = 600
+  wait          = true
+  wait_for_jobs = true
 
   values = [
     yamlencode({
@@ -493,6 +509,10 @@ resource "helm_release" "tempo" {
   chart      = "tempo-distributed"
   version    = var.tempo_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  
+  timeout       = 900
+  wait          = true
+  wait_for_jobs = true
 
   values = [
     yamlencode({
@@ -592,7 +612,7 @@ resource "helm_release" "tempo" {
     })
   ]
 
-  depends_on = [kubernetes_namespace.observability]
+  depends_on = [helm_release.loki]
 }
 
 # OpenTelemetry components temporarily disabled to resolve CRD issues
@@ -693,6 +713,10 @@ resource "helm_release" "grafana" {
   chart      = "grafana"
   version    = var.grafana_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  
+  timeout       = 600
+  wait          = true
+  wait_for_jobs = true
 
   values = [
     yamlencode({
@@ -812,11 +836,5 @@ resource "helm_release" "grafana" {
     })
   ]
 
-  depends_on = [
-    kubernetes_namespace.observability,
-    helm_release.prometheus_stack,
-    helm_release.mimir,
-    helm_release.loki,
-    helm_release.tempo
-  ]
+  depends_on = [helm_release.mimir]
 }
