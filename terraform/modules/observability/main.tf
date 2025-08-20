@@ -110,16 +110,17 @@ resource "helm_release" "prometheus_stack" {
             }
           }
 
-          remoteWrite = [
-            {
-              url = "http://mimir-distributor.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:8080/api/v1/push"
-              queueConfig = {
-                batchSendDeadline = "5s"
-                maxSamplesPerSend = 1000
-                maxShards         = 10
-              }
-            }
-          ]
+          # Remote write disabled since Mimir is temporarily disabled
+          # remoteWrite = [
+          #   {
+          #     url = "http://mimir-distributor.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:8080/api/v1/push"
+          #     queueConfig = {
+          #       batchSendDeadline = "5s"
+          #       maxSamplesPerSend = 1000
+          #       maxShards         = 10
+          #     }
+          #   }
+          # ]
 
           # OpenTelemetry scrape configs temporarily disabled
           # additionalScrapeConfigs = [
@@ -173,164 +174,166 @@ resource "helm_release" "prometheus_stack" {
 }
 
 # Mimir for long-term metrics storage
-resource "helm_release" "mimir" {
-  name       = "mimir"
-  repository = "https://grafana.github.io/helm-charts"
-  chart      = "mimir-distributed"
-  version    = var.mimir_version
-  namespace  = kubernetes_namespace.observability.metadata[0].name
-  
-  timeout       = 900
-  wait          = true
-  wait_for_jobs = true
+# Mimir temporarily disabled to reduce resource usage and improve deployment stability
+# Can be re-enabled later when cluster has more capacity
+# resource "helm_release" "mimir" {
+#   name       = "mimir"
+#   repository = "https://grafana.github.io/helm-charts"
+#   chart      = "mimir-distributed"
+#   version    = var.mimir_version
+#   namespace  = kubernetes_namespace.observability.metadata[0].name
+#   
+#   timeout       = 900
+#   wait          = true
+#   wait_for_jobs = true
 
-  values = [
-    yamlencode({
-      mimir = {
-        structuredConfig = {
-          common = {
-            storage = {
-              backend = "s3"
-              s3 = {
-                endpoint          = "s3.${var.aws_region}.amazonaws.com"
-                bucket_name       = var.prometheus_s3_bucket
-                region           = var.aws_region
-              }
-            }
-          }
-          
-          blocks_storage = {
-            s3 = {
-              bucket_name = var.prometheus_s3_bucket
-              region     = var.aws_region
-            }
-          }
-
-          ruler_storage = {
-            s3 = {
-              bucket_name = var.prometheus_s3_bucket
-              region     = var.aws_region
-            }
-          }
-
-          alertmanager_storage = {
-            s3 = {
-              bucket_name = var.prometheus_s3_bucket
-              region     = var.aws_region
-            }
-          }
-        }
-      }
-
-      serviceAccount = {
-        annotations = {
-          "eks.amazonaws.com/role-arn" = var.mimir_irsa_role_arn
-        }
-      }
-
-      distributor = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "1Gi"
-          }
-        }
-      }
-
-      ingester = {
-        replicas = 3
-        resources = {
-          requests = {
-            cpu    = "500m"
-            memory = "1Gi"
-          }
-          limits = {
-            cpu    = "2"
-            memory = "4Gi"
-          }
-        }
-        persistentVolume = {
-          enabled      = true
-          storageClass = "gp3"
-          size         = "50Gi"
-        }
-      }
-
-      querier = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
-        }
-      }
-
-      query_frontend = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "256Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "1Gi"
-          }
-        }
-      }
-
-      compactor = {
-        replicas = 1
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
-        }
-        persistentVolume = {
-          enabled      = true
-          storageClass = "gp3"
-          size         = "20Gi"
-        }
-      }
-
-      store_gateway = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
-        }
-        persistentVolume = {
-          enabled      = true
-          storageClass = "gp3"
-          size         = "20Gi"
-        }
-      }
-    })
-  ]
-
-  depends_on = [helm_release.tempo]
-}
+#   values = [
+#     yamlencode({
+#       mimir = {
+#         structuredConfig = {
+#           common = {
+#             storage = {
+#               backend = "s3"
+#               s3 = {
+#                 endpoint          = "s3.${var.aws_region}.amazonaws.com"
+#                 bucket_name       = var.prometheus_s3_bucket
+#                 region           = var.aws_region
+#               }
+#             }
+#           }
+#           
+#           blocks_storage = {
+#             s3 = {
+#               bucket_name = var.prometheus_s3_bucket
+#               region     = var.aws_region
+#             }
+#           }
+# 
+#           ruler_storage = {
+#             s3 = {
+#               bucket_name = var.prometheus_s3_bucket
+#               region     = var.aws_region
+#             }
+#           }
+# 
+#           alertmanager_storage = {
+#             s3 = {
+#               bucket_name = var.prometheus_s3_bucket
+#               region     = var.aws_region
+#             }
+#           }
+#         }
+#       }
+# 
+#       serviceAccount = {
+#         annotations = {
+#           "eks.amazonaws.com/role-arn" = var.mimir_irsa_role_arn
+#         }
+#       }
+# 
+#       distributor = {
+#         replicas = 2
+#         resources = {
+#           requests = {
+#             cpu    = "200m"
+#             memory = "512Mi"
+#           }
+#           limits = {
+#             cpu    = "1"
+#             memory = "1Gi"
+#           }
+#         }
+#       }
+# 
+#       ingester = {
+#         replicas = 3
+#         resources = {
+#           requests = {
+#             cpu    = "500m"
+#             memory = "1Gi"
+#           }
+#           limits = {
+#             cpu    = "2"
+#             memory = "4Gi"
+#           }
+#         }
+#         persistentVolume = {
+#           enabled      = true
+#           storageClass = "gp3"
+#           size         = "50Gi"
+#         }
+#       }
+# 
+#       querier = {
+#         replicas = 2
+#         resources = {
+#           requests = {
+#             cpu    = "200m"
+#             memory = "512Mi"
+#           }
+#           limits = {
+#             cpu    = "1"
+#             memory = "2Gi"
+#           }
+#         }
+#       }
+# 
+#       query_frontend = {
+#         replicas = 2
+#         resources = {
+#           requests = {
+#             cpu    = "200m"
+#             memory = "256Mi"
+#           }
+#           limits = {
+#             cpu    = "500m"
+#             memory = "1Gi"
+#           }
+#         }
+#       }
+# 
+#       compactor = {
+#         replicas = 1
+#         resources = {
+#           requests = {
+#             cpu    = "200m"
+#             memory = "512Mi"
+#           }
+#           limits = {
+#             cpu    = "1"
+#             memory = "2Gi"
+#           }
+#         }
+#         persistentVolume = {
+#           enabled      = true
+#           storageClass = "gp3"
+#           size         = "20Gi"
+#         }
+#       }
+# 
+#       store_gateway = {
+#         replicas = 2
+#         resources = {
+#           requests = {
+#             cpu    = "200m"
+#             memory = "512Mi"
+#           }
+#           limits = {
+#             cpu    = "1"
+#             memory = "2Gi"
+#           }
+#         }
+#         persistentVolume = {
+#           enabled      = true
+#           storageClass = "gp3"
+#           size         = "20Gi"
+#         }
+#       }
+#     })
+#   ]
+# 
+#   depends_on = [helm_release.tempo]
+# }
 
 # Loki for logs
 resource "helm_release" "loki" {
@@ -346,108 +349,76 @@ resource "helm_release" "loki" {
 
   values = [
     yamlencode({
+      # Simple single-binary Loki configuration
+      deploymentMode = "SingleBinary"
+      
       loki = {
         auth_enabled = false
-        
         commonConfig = {
           replication_factor = 1
         }
-
         storage = {
-          type = "s3"
-          s3 = {
-            endpoint   = "s3.${var.aws_region}.amazonaws.com"
-            region     = var.aws_region
-            bucketName = var.loki_s3_bucket
-          }
+          type = "filesystem"
         }
-
         schemaConfig = {
           configs = [
             {
-              from         = "2023-01-01"
-              store        = "boltdb-shipper"
-              object_store = "s3"
-              schema       = "v11"
+              from = "2024-01-01"
+              store = "tsdb"
+              object_store = "filesystem"
+              schema = "v12"
               index = {
-                prefix = "loki_index_"
+                prefix = "index_"
                 period = "24h"
               }
             }
           ]
         }
+        limits_config = {
+          enforce_metric_name = false
+          reject_old_samples = true
+          reject_old_samples_max_age = "168h"
+          max_cache_freshness_per_query = "10m"
+          query_timeout = "300s"
+        }
+      }
+
+      singleBinary = {
+        replicas = 1
+        resources = {
+          requests = {
+            cpu    = "100m"
+            memory = "256Mi"
+          }
+          limits = {
+            cpu    = "500m"
+            memory = "1Gi"
+          }
+        }
+        persistence = {
+          enabled = true
+          size = "10Gi"
+          storageClass = "gp3"
+        }
+      }
+
+      # Disable distributed components
+      write = {
+        replicas = 0
+      }
+      read = {
+        replicas = 0
+      }
+      backend = {
+        replicas = 0
+      }
+      gateway = {
+        enabled = false
       }
 
       serviceAccount = {
         annotations = {
           "eks.amazonaws.com/role-arn" = var.loki_irsa_role_arn
-        }
-      }
-
-      write = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
-        }
-        persistence = {
-          enabled      = true
-          storageClass = "gp3"
-          size         = "20Gi"
-        }
-      }
-
-      read = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
-        }
-      }
-
-      backend = {
-        replicas = 1
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
-        }
-        persistence = {
-          enabled      = true
-          storageClass = "gp3"
-          size         = "20Gi"
-        }
-      }
-
-      gateway = {
-        enabled = true
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "128Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "512Mi"
-          }
         }
       }
     })
@@ -473,7 +444,7 @@ resource "helm_release" "promtail" {
       config = {
         clients = [
           {
-            url = "http://loki-gateway.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local/loki/api/v1/push"
+            url = "http://loki.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3100/loki/api/v1/push"
           }
         ]
       }
@@ -506,107 +477,74 @@ resource "helm_release" "promtail" {
 resource "helm_release" "tempo" {
   name       = "tempo"
   repository = "https://grafana.github.io/helm-charts"
-  chart      = "tempo-distributed"
+  chart      = "tempo"
   version    = var.tempo_version
   namespace  = kubernetes_namespace.observability.metadata[0].name
   
-  timeout       = 900
+  timeout       = 600
   wait          = true
   wait_for_jobs = true
 
   values = [
     yamlencode({
+      # Simple monolithic Tempo configuration
       tempo = {
         storage = {
           trace = {
-            backend = "s3"
-            s3 = {
-              bucket   = var.tempo_s3_bucket
-              endpoint = "s3.${var.aws_region}.amazonaws.com"
-              region   = var.aws_region
+            backend = "local"
+            local = {
+              path = "/tmp/tempo/blocks"
+            }
+          }
+        }
+        
+        receivers = {
+          jaeger = {
+            protocols = {
+              grpc = {
+                endpoint = "0.0.0.0:14250"
+              }
+              thrift_http = {
+                endpoint = "0.0.0.0:14268"
+              }
+            }
+          }
+          otlp = {
+            protocols = {
+              grpc = {
+                endpoint = "0.0.0.0:4317"
+              }
+              http = {
+                endpoint = "0.0.0.0:4318"
+              }
             }
           }
         }
       }
 
+      # Single instance deployment
+      replicas = 1
+      
+      resources = {
+        requests = {
+          cpu    = "100m"
+          memory = "256Mi"
+        }
+        limits = {
+          cpu    = "500m"
+          memory = "1Gi"
+        }
+      }
+
+      persistence = {
+        enabled = true
+        size = "10Gi"
+        storageClass = "gp3"
+      }
+
       serviceAccount = {
         annotations = {
           "eks.amazonaws.com/role-arn" = var.tempo_irsa_role_arn
-        }
-      }
-
-      distributor = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "256Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "1Gi"
-          }
-        }
-      }
-
-      ingester = {
-        replicas = 3
-        resources = {
-          requests = {
-            cpu    = "500m"
-            memory = "1Gi"
-          }
-          limits = {
-            cpu    = "2"
-            memory = "4Gi"
-          }
-        }
-        persistence = {
-          enabled      = true
-          storageClass = "gp3"
-          size         = "20Gi"
-        }
-      }
-
-      querier = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "256Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "1Gi"
-          }
-        }
-      }
-
-      queryFrontend = {
-        replicas = 2
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "256Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "1Gi"
-          }
-        }
-      }
-
-      compactor = {
-        replicas = 1
-        resources = {
-          requests = {
-            cpu    = "200m"
-            memory = "512Mi"
-          }
-          limits = {
-            cpu    = "1"
-            memory = "2Gi"
-          }
         }
       }
     })
@@ -750,19 +688,14 @@ resource "helm_release" "grafana" {
               isDefault = true
             },
             {
-              name = "Mimir"
-              type = "prometheus"
-              url  = "http://mimir-query-frontend.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:8080/prometheus"
-            },
-            {
               name = "Loki"
               type = "loki"
-              url  = "http://loki-gateway.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local"
+              url  = "http://loki.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3100"
             },
             {
               name = "Tempo"
               type = "tempo"
-              url  = "http://tempo-query-frontend.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3200"
+              url  = "http://tempo.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3200"
             }
           ]
         }
@@ -836,5 +769,5 @@ resource "helm_release" "grafana" {
     })
   ]
 
-  depends_on = [helm_release.mimir]
+  depends_on = [helm_release.tempo]
 }
