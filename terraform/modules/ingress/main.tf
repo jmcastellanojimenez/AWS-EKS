@@ -115,10 +115,15 @@ resource "time_sleep" "wait_for_cert_manager_crds" {
 
 # ClusterIssuer for Let's Encrypt
 resource "null_resource" "letsencrypt_issuer" {
+  triggers = {
+    cluster_name = var.cluster_name
+    aws_region   = var.aws_region
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       # Configure kubectl to use the EKS cluster
-      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name}
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
       
       # Apply the ClusterIssuer with validation disabled to avoid API issues
       cat <<EOF | kubectl apply --validate=false -f -
@@ -141,22 +146,14 @@ spec:
             key: api-token
 EOF
     EOT
-
-    environment = {
-      AWS_REGION = var.aws_region
-    }
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name} 2>/dev/null || true
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
       kubectl delete clusterissuer letsencrypt-prod --ignore-not-found=true 2>/dev/null || true
     EOT
-
-    environment = {
-      AWS_REGION = var.aws_region
-    }
   }
 
   depends_on = [time_sleep.wait_for_cert_manager_crds]
@@ -314,10 +311,15 @@ resource "time_sleep" "wait_for_ambassador_crds" {
 
 # Ambassador Module and Mappings
 resource "null_resource" "ambassador_module" {
+  triggers = {
+    cluster_name = var.cluster_name
+    aws_region   = var.aws_region
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       # Configure kubectl to use the EKS cluster
-      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name}
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
       
       # Apply the Module with validation disabled to avoid API issues
       cat <<EOF | kubectl apply --validate=false -f -
@@ -342,22 +344,14 @@ spec:
     reject_requests_with_escaped_slashes: false
 EOF
     EOT
-
-    environment = {
-      AWS_REGION = var.aws_region
-    }
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name} 2>/dev/null || true
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
       kubectl delete module ambassador -n ingress-system --ignore-not-found=true 2>/dev/null || true
     EOT
-
-    environment = {
-      AWS_REGION = var.aws_region
-    }
   }
 
   depends_on = [time_sleep.wait_for_ambassador_crds]
@@ -365,10 +359,15 @@ EOF
 
 # Default Ambassador Host
 resource "null_resource" "ambassador_host" {
+  triggers = {
+    cluster_name = var.cluster_name
+    aws_region   = var.aws_region
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       # Configure kubectl to use the EKS cluster
-      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name}
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
       
       # Apply the Host with validation disabled to avoid API issues
       cat <<EOF | kubectl apply --validate=false -f -
@@ -386,22 +385,14 @@ spec:
     name: ambassador-certs
 EOF
     EOT
-
-    environment = {
-      AWS_REGION = var.aws_region
-    }
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name} 2>/dev/null || true
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
       kubectl delete host default-host -n ingress-system --ignore-not-found=true 2>/dev/null || true
     EOT
-
-    environment = {
-      AWS_REGION = var.aws_region
-    }
   }
 
   depends_on = [time_sleep.wait_for_ambassador_crds, time_sleep.wait_for_cert_manager_crds]
