@@ -13,7 +13,7 @@ data "aws_eks_cluster_auth" "foundation" {
 # Kubernetes provider configuration
 provider "kubernetes" {
   alias = "ingress_stack"
-  
+
   host                   = data.aws_eks_cluster.foundation.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.foundation.certificate_authority[0].data)
   token                  = data.aws_eks_cluster_auth.foundation.token
@@ -28,7 +28,7 @@ provider "kubernetes" {
 # Helm provider configuration
 provider "helm" {
   alias = "ingress_stack"
-  
+
   kubernetes {
     host                   = data.aws_eks_cluster.foundation.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.foundation.certificate_authority[0].data)
@@ -46,7 +46,7 @@ provider "helm" {
 locals {
   # Domain configuration for ingress
   ingress_domain = var.ingress_domain != "" ? var.ingress_domain : "${var.environment}.${var.project_name}.local"
-  
+
   # Resource sizing configuration for t3.large nodes
   # Total planned allocation: ~1.2 CPU, ~768Mi memory
   # Remaining headroom: ~2.8 CPU, ~1.2Gi memory for workflows 3-7
@@ -55,7 +55,7 @@ locals {
 # cert-manager Module
 module "cert_manager" {
   source = "../../modules/cert-manager"
-  
+
   providers = {
     kubernetes = kubernetes.ingress_stack
     helm       = helm.ingress_stack
@@ -77,20 +77,20 @@ module "cert_manager" {
 # external-dns Module
 module "external_dns" {
   source = "../../modules/external-dns"
-  
+
   providers = {
     kubernetes = kubernetes.ingress_stack
     helm       = helm.ingress_stack
   }
 
-  project_name              = var.project_name
-  environment               = var.environment
-  external_dns_version      = var.external_dns_version
-  dns_provider              = var.dns_provider
-  domain_filters            = var.domain_filters
-  cloudflare_api_token      = var.cloudflare_api_token
-  service_account_role_arn  = var.external_dns_role_arn != "" ? var.external_dns_role_arn : module.iam_irsa.external_dns_role_arn
-  enable_monitoring         = var.enable_monitoring
+  project_name             = var.project_name
+  environment              = var.environment
+  external_dns_version     = var.external_dns_version
+  dns_provider             = var.dns_provider
+  domain_filters           = var.domain_filters
+  cloudflare_api_token     = var.cloudflare_api_token
+  service_account_role_arn = var.external_dns_role_arn != "" ? var.external_dns_role_arn : module.iam_irsa.external_dns_role_arn
+  enable_monitoring        = var.enable_monitoring
 
   depends_on = [
     module.cert_manager
@@ -100,7 +100,7 @@ module "external_dns" {
 # Ambassador (Emissary-Ingress) Module  
 module "ambassador" {
   source = "../../modules/ambassador"
-  
+
   providers = {
     kubernetes = kubernetes.ingress_stack
     helm       = helm.ingress_stack

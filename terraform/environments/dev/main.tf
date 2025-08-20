@@ -20,7 +20,7 @@ terraform {
 # Configure providers
 provider "aws" {
   region = var.aws_region
-  
+
   default_tags {
     tags = {
       Project     = var.project_name
@@ -30,40 +30,28 @@ provider "aws" {
   }
 }
 
-# Data source for EKS cluster authentication
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.foundation.cluster_name
-}
+# Note: Kubernetes and Helm providers are configured in individual workflow files
+# This main.tf only contains the foundation platform
 
-# Configure Kubernetes provider for EKS cluster
-provider "kubernetes" {
-  host                   = try(module.foundation.cluster_endpoint, "")
-  cluster_ca_certificate = try(base64decode(module.foundation.cluster_certificate_authority_data), "")
-  token                  = try(data.aws_eks_cluster_auth.cluster.token, "")
-}
-
-# Configure Helm provider for EKS cluster  
-provider "helm" {
-  kubernetes {
-    host                   = try(module.foundation.cluster_endpoint, "")
-    cluster_ca_certificate = try(base64decode(module.foundation.cluster_certificate_authority_data), "")
-    token                  = try(data.aws_eks_cluster_auth.cluster.token, "")
-  }
-}
-
-# Additional data sources
+# Data source for AWS account ID
 data "aws_caller_identity" "current" {}
 
 # Local values
 locals {
   cluster_name = "${var.project_name}-${var.environment}-cluster"
+  
+  common_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
 }
 
 # Workflow 1: Foundation Platform
 module "foundation" {
   source = "../../modules/foundation"
 
-  project_name              = var.project_name
+  project_name             = var.project_name
   environment              = var.environment
   owner                    = var.owner
   aws_region               = var.aws_region
@@ -77,7 +65,7 @@ module "foundation" {
 
 # IAM roles for observability components
 module "observability_irsa_roles" {
-  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.0"
 
   for_each = toset(["prometheus", "loki", "tempo"])
@@ -101,7 +89,7 @@ module "observability_irsa_roles" {
 # S3 access policy for observability components
 resource "aws_iam_policy" "observability_s3_policy" {
   for_each = toset(["prometheus", "loki", "tempo"])
-  
+
   name        = "${local.cluster_name}-${each.key}-s3-policy"
   description = "S3 access policy for ${each.key}"
 
@@ -130,57 +118,32 @@ module "ingress" {
   source = "../../modules/ingress"
 
   project_name         = var.project_name
-  environment         = var.environment
-  cluster_name        = module.foundation.cluster_name
-  aws_region          = var.aws_region
-  domain_name         = var.domain_name
-  domain_filters      = [var.domain_name]
-  letsencrypt_email   = var.letsencrypt_email
-  cloudflare_email    = var.cloudflare_email
+  environment          = var.environment
+  cluster_name         = module.foundation.cluster_name
+  aws_region           = var.aws_region
+  domain_name          = var.domain_name
+  domain_filters       = [var.domain_name]
+  letsencrypt_email    = var.letsencrypt_email
+  cloudflare_email     = var.cloudflare_email
   cloudflare_api_token = var.cloudflare_api_token
 
   depends_on = [module.foundation]
 }
 
-# Workflow 3: LGTM Observability Stack
-module "lgtm_observability" {
-  source = "../../modules/observability"
-
-  project_name      = var.project_name
-  environment      = var.environment
-  cluster_name     = module.foundation.cluster_name
-  cluster_endpoint  = module.foundation.cluster_endpoint
-  cluster_certificate_authority_data = module.foundation.cluster_certificate_authority_data
-  domain_name      = var.domain_name
-  aws_region       = var.aws_region
-
-  # S3 buckets
-  prometheus_s3_bucket = module.foundation.observability_s3_buckets["prometheus"].bucket
-  loki_s3_bucket      = module.foundation.observability_s3_buckets["loki"].bucket
-  tempo_s3_bucket     = module.foundation.observability_s3_buckets["tempo"].bucket
-
-  # IRSA roles
-  mimir_irsa_role_arn = module.observability_irsa_roles["prometheus"].iam_role_arn
-  loki_irsa_role_arn  = module.observability_irsa_roles["loki"].iam_role_arn
-  tempo_irsa_role_arn = module.observability_irsa_roles["tempo"].iam_role_arn
-
-  grafana_admin_password = var.grafana_admin_password
-
-  depends_on = [module.foundation, module.observability_irsa_roles]
-}
+# Workflow 3: LGTM Observability Stack - See lgtm-observability.tf
 
 # Workflow 4: GitOps & CI/CD
 module "gitops" {
   source = "../../modules/gitops"
 
-  project_name        = var.project_name
+  project_name       = var.project_name
   environment        = var.environment
   cluster_name       = module.foundation.cluster_name
   domain_name        = var.domain_name
   gitops_repo_url    = var.gitops_repo_url
   gitops_repo_branch = var.gitops_repo_branch
 
-  depends_on = [module.foundation, module.ingress, module.lgtm_observability]
+  depends_on = [module.foundation]
 }
 
 # Workflow 5: Security Foundation
@@ -188,11 +151,11 @@ module "security" {
   source = "../../modules/security"
 
   project_name      = var.project_name
-  environment      = var.environment
-  cluster_name     = module.foundation.cluster_name
+  environment       = var.environment
+  cluster_name      = module.foundation.cluster_name
   slack_webhook_url = var.slack_webhook_url
 
-  depends_on = [module.foundation, module.ingress, module.lgtm_observability]
+  depends_on = [module.foundation]
 }
 
 # Workflow 6: Service Mesh
@@ -204,7 +167,7 @@ module "service_mesh" {
   cluster_name = module.foundation.cluster_name
   domain_name  = var.domain_name
 
-  depends_on = [module.foundation, module.ingress, module.lgtm_observability]
+  depends_on = [module.foundation]
 }
 
 # Workflow 7: Data Services
@@ -216,12 +179,12 @@ module "data_services" {
   cluster_name = module.foundation.cluster_name
 
   # PostgreSQL Configuration
-  postgres_password           = var.postgres_password
-  postgres_backup_bucket      = "${var.project_name}-${var.environment}-postgres-backup"
-  postgres_backup_access_key  = var.postgres_backup_access_key
-  postgres_backup_secret_key  = var.postgres_backup_secret_key
+  postgres_password          = var.postgres_password
+  postgres_backup_bucket     = "${var.project_name}-${var.environment}-postgres-backup"
+  postgres_backup_access_key = var.postgres_backup_access_key
+  postgres_backup_secret_key = var.postgres_backup_secret_key
 
-  depends_on = [module.foundation, module.ingress, module.lgtm_observability]
+  depends_on = [module.foundation]
 }
 
 # AWS Load Balancer Controller and Cluster Autoscaler will be installed by the foundation module

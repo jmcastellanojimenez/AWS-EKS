@@ -67,7 +67,7 @@ output "argocd_endpoint" {
 }
 
 output "tekton_ready" {
-  description = "Tekton deployment status"  
+  description = "Tekton deployment status"
   value       = try(length(module.gitops.tekton_pipelines_controller) > 0, false)
 }
 
@@ -109,13 +109,13 @@ output "openbao_url" {
 output "service_endpoints" {
   description = "All service endpoints"
   value = {
-    grafana    = module.lgtm_observability.grafana_url
-    argocd     = "https://${var.domain_name}/argocd"
-    kiali      = module.service_mesh.kiali_url
-    openbao    = module.security.openbao_url
-    postgres   = module.data_services.service_endpoints.postgres
-    redis      = module.data_services.service_endpoints.redis
-    kafka      = module.data_services.service_endpoints.kafka
+    grafana  = module.lgtm_observability.grafana_url
+    argocd   = "https://${var.domain_name}/argocd"
+    kiali    = module.service_mesh.kiali_url
+    openbao  = module.security.openbao_url
+    postgres = module.data_services.service_endpoints.postgres
+    redis    = module.data_services.service_endpoints.redis
+    kafka    = module.data_services.service_endpoints.kafka
   }
 }
 
@@ -135,12 +135,12 @@ output "platform_status" {
   description = "Platform deployment status"
   value = {
     foundation_deployed    = true
-    ingress_deployed      = true
+    ingress_deployed       = true
     observability_deployed = true
-    gitops_deployed       = true
-    security_deployed     = true
-    service_mesh_deployed = true
+    gitops_deployed        = true
+    security_deployed      = true
+    service_mesh_deployed  = true
     data_services_deployed = true
-    total_workflows       = 7
+    total_workflows        = 7
   }
 }
