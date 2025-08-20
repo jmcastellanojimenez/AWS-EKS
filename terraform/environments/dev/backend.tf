@@ -3,10 +3,10 @@
 
 terraform {
   backend "s3" {
-    bucket         = "your-terraform-state-bucket"
+    bucket         = "eks-learning-lab-terraform-state-011921741593"
     key            = "eks-platform/dev/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "terraform-state-lock"
+    dynamodb_table = "eks-learning-lab-terraform-lock"
     encrypt        = true
   }
 }
