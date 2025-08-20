@@ -7,9 +7,7 @@ data "aws_eks_cluster" "cluster" {
   name = module.foundation.cluster_name
 }
 
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.foundation.cluster_name
-}
+# Note: aws_eks_cluster_auth is defined in main.tf to avoid conflicts
 
 # Kubernetes and Helm providers for LGTM stack
 provider "kubernetes" {
