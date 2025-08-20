@@ -30,9 +30,28 @@ provider "aws" {
   }
 }
 
-# Kubernetes and Helm providers will be configured by individual modules as needed
+# Data source for EKS cluster authentication
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.foundation.cluster_name
+}
 
-# Data sources
+# Configure Kubernetes provider for EKS cluster
+provider "kubernetes" {
+  host                   = module.foundation.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.foundation.cluster_certificate_authority_data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
+}
+
+# Configure Helm provider for EKS cluster
+provider "helm" {
+  kubernetes {
+    host                   = module.foundation.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.foundation.cluster_certificate_authority_data)
+    token                  = data.aws_eks_cluster_auth.cluster.token
+  }
+}
+
+# Additional data sources
 data "aws_caller_identity" "current" {}
 
 # Local values
