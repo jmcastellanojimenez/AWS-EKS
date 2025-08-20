@@ -241,80 +241,50 @@ resource "helm_release" "external_dns" {
 }
 */
 
-# Two-phase approach: Install CRDs first, then the workload
-# Phase 1: Install only CRDs
-resource "helm_release" "ambassador_crds" {
-  name       = "ambassador-crds"
-  repository = "https://app.getambassador.io"
-  chart      = "emissary-ingress"
-  version    = var.ambassador_version
-  namespace  = kubernetes_namespace.ingress.metadata[0].name
+# Install Ambassador CRDs using helm template + kubectl apply
+resource "null_resource" "ambassador_crds" {
+  triggers = {
+    cluster_name = var.cluster_name
+    aws_region   = var.aws_region
+    chart_version = var.ambassador_version
+  }
 
-  # Install only CRDs, disable all workloads
-  skip_crds        = false
-  wait             = true
-  timeout          = 300
-  cleanup_on_fail  = true
-  atomic           = true
-  create_namespace = false
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Configure kubectl to use the EKS cluster
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
+      
+      # Use helm template to extract CRDs and apply them
+      echo "Extracting and installing Ambassador CRDs..."
+      helm template ambassador-crds \
+        --repo https://app.getambassador.io \
+        --version ${self.triggers.chart_version} \
+        --namespace ingress-system \
+        --include-crds \
+        --skip-tests \
+        emissary-ingress | \
+      kubectl apply -f - --dry-run=client --validate=false -o yaml | \
+      grep -A 10000 "kind: CustomResourceDefinition" | \
+      kubectl apply --validate=false -f -
+      
+      # Wait for CRDs to be available
+      echo "Waiting for Ambassador CRDs to be available..."
+      kubectl wait --for condition=established --timeout=300s crd/modules.getambassador.io crd/hosts.getambassador.io crd/mappings.getambassador.io || true
+    EOT
+  }
 
-  values = [
-    yamlencode({
-      # Disable ALL workload components - only install CRDs
-      replicaCount = 0
-      
-      # Completely disable the main deployment
-      deployment = {
-        enabled = false
-      }
-      
-      # Disable service creation
-      service = {
-        create = false
-      }
-      
-      # Disable all additional components
-      rbac = {
-        create = false
-      }
-      
-      serviceAccount = {
-        create = false
-      }
-      
-      # Disable all Ambassador features
-      agent = {
-        enabled = false
-      }
-      
-      enableAES = false
-      
-      # Disable all automatic resource creation
-      createDefaultListeners  = false
-      createDevPortalMappings = false
-      createDefaultModules    = false
-      createDefaultHosts      = false
-      createDefaultMapping    = false
-      
-      emissaryConfig = {
-        create = false
-      }
-      
-      # Disable monitoring
-      serviceMonitor = {
-        enabled = false
-      }
-      
-      prometheusExporter = {
-        enabled = false
-      }
-    })
-  ]
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
+      kubectl delete crd modules.getambassador.io hosts.getambassador.io mappings.getambassador.io --ignore-not-found=true 2>/dev/null || true
+    EOT
+  }
 
   depends_on = [kubernetes_namespace.ingress]
 }
 
-# Phase 2: Install the actual Ambassador workload after CRDs are ready
+# Install the actual Ambassador workload after CRDs are ready
 resource "helm_release" "ambassador" {
   name       = "ambassador"
   repository = "https://app.getambassador.io"
@@ -410,12 +380,12 @@ resource "helm_release" "ambassador" {
     })
   ]
 
-  depends_on = [helm_release.ambassador_crds]
+  depends_on = [null_resource.ambassador_crds]
 }
 
 # Wait for Ambassador CRDs to be available
 resource "time_sleep" "wait_for_ambassador_crds" {
-  depends_on      = [helm_release.ambassador_crds]
+  depends_on      = [null_resource.ambassador_crds]
   create_duration = "30s"
 }
 
