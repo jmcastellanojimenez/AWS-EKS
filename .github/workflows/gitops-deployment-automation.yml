@@ -180,8 +180,7 @@ jobs:
             terraform plan -out=tfplan-helm \
               -target=module.gitops.kubernetes_namespace.gitops \
               -target=module.gitops.helm_release.argocd \
-              -target=module.gitops.helm_release.tekton_pipelines \
-              -target=module.gitops.helm_release.tekton_triggers
+              -target=module.gitops.helm_release.tekton_pipelines
           fi
 
       - name: 📊 Terraform Plan (Full GitOps)

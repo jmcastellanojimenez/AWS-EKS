@@ -180,7 +180,7 @@ resource "helm_release" "argocd" {
 resource "helm_release" "tekton_pipelines" {
   name       = "tekton-pipelines"
   repository = "https://cdfoundation.github.io/tekton-helm-chart"
-  chart      = "tekton-pipelines"
+  chart      = "tekton-pipeline"
   version    = var.tekton_version
   namespace  = kubernetes_namespace.gitops.metadata[0].name
 
@@ -217,46 +217,46 @@ resource "helm_release" "tekton_pipelines" {
   depends_on = [kubernetes_namespace.gitops]
 }
 
-# Tekton Triggers
-resource "helm_release" "tekton_triggers" {
-  name       = "tekton-triggers"
-  repository = "https://cdfoundation.github.io/tekton-helm-chart"
-  chart      = "tekton-triggers"
-  version    = var.tekton_triggers_version
-  namespace  = kubernetes_namespace.gitops.metadata[0].name
-
-  values = [
-    yamlencode({
-      controller = {
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "128Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "512Mi"
-          }
-        }
-      }
-
-      webhook = {
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "128Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "512Mi"
-          }
-        }
-      }
-    })
-  ]
-
-  depends_on = [helm_release.tekton_pipelines]
-}
+# Tekton Triggers (included in tekton-pipeline chart, not a separate release)
+# resource "helm_release" "tekton_triggers" {
+#   name       = "tekton-triggers"
+#   repository = "https://cdfoundation.github.io/tekton-helm-chart"
+#   chart      = "tekton-triggers"
+#   version    = var.tekton_triggers_version
+#   namespace  = kubernetes_namespace.gitops.metadata[0].name
+#
+#   values = [
+#     yamlencode({
+#       controller = {
+#         resources = {
+#           requests = {
+#             cpu    = "100m"
+#             memory = "128Mi"
+#           }
+#           limits = {
+#             cpu    = "500m"
+#             memory = "512Mi"
+#           }
+#         }
+#       }
+#
+#       webhook = {
+#         resources = {
+#           requests = {
+#             cpu    = "100m"
+#             memory = "128Mi"
+#           }
+#           limits = {
+#             cpu    = "500m"
+#             memory = "512Mi"
+#           }
+#         }
+#       }
+#     })
+#   ]
+#
+#   depends_on = [helm_release.tekton_pipelines]
+# }
 
 # Wait for ArgoCD CRDs to be available
 resource "time_sleep" "wait_for_argocd_crds" {
@@ -266,7 +266,7 @@ resource "time_sleep" "wait_for_argocd_crds" {
 
 # Wait for Tekton CRDs to be available
 resource "time_sleep" "wait_for_tekton_crds" {
-  depends_on      = [helm_release.tekton_pipelines, helm_release.tekton_triggers]
+  depends_on      = [helm_release.tekton_pipelines]
   create_duration = "60s"
 }
 

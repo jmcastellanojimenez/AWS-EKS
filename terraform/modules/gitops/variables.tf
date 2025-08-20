@@ -38,7 +38,7 @@ variable "argocd_admin_password" {
 variable "tekton_version" {
   description = "Tekton Pipelines Helm chart version"
   type        = string
-  default     = "0.56.3"
+  default     = "1.2.0"
 }
 
 variable "tekton_triggers_version" {
