@@ -241,10 +241,80 @@ resource "helm_release" "external_dns" {
 }
 */
 
-# Use a different approach - let Helm install CRDs but prevent default resources
-# Remove the custom CRD installation since the URL is returning 403
+# Two-phase approach: Install CRDs first, then the workload
+# Phase 1: Install only CRDs
+resource "helm_release" "ambassador_crds" {
+  name       = "ambassador-crds"
+  repository = "https://app.getambassador.io"
+  chart      = "emissary-ingress"
+  version    = var.ambassador_version
+  namespace  = kubernetes_namespace.ingress.metadata[0].name
 
-# Ambassador (Emissary Ingress)
+  # Install only CRDs, disable all workloads
+  skip_crds        = false
+  wait             = true
+  timeout          = 300
+  cleanup_on_fail  = true
+  atomic           = true
+  create_namespace = false
+
+  values = [
+    yamlencode({
+      # Disable ALL workload components - only install CRDs
+      replicaCount = 0
+      
+      # Completely disable the main deployment
+      deployment = {
+        enabled = false
+      }
+      
+      # Disable service creation
+      service = {
+        create = false
+      }
+      
+      # Disable all additional components
+      rbac = {
+        create = false
+      }
+      
+      serviceAccount = {
+        create = false
+      }
+      
+      # Disable all Ambassador features
+      agent = {
+        enabled = false
+      }
+      
+      enableAES = false
+      
+      # Disable all automatic resource creation
+      createDefaultListeners  = false
+      createDevPortalMappings = false
+      createDefaultModules    = false
+      createDefaultHosts      = false
+      createDefaultMapping    = false
+      
+      emissaryConfig = {
+        create = false
+      }
+      
+      # Disable monitoring
+      serviceMonitor = {
+        enabled = false
+      }
+      
+      prometheusExporter = {
+        enabled = false
+      }
+    })
+  ]
+
+  depends_on = [kubernetes_namespace.ingress]
+}
+
+# Phase 2: Install the actual Ambassador workload after CRDs are ready
 resource "helm_release" "ambassador" {
   name       = "ambassador"
   repository = "https://app.getambassador.io"
@@ -252,8 +322,8 @@ resource "helm_release" "ambassador" {
   version    = var.ambassador_version
   namespace  = kubernetes_namespace.ingress.metadata[0].name
 
-  # Allow Helm to install CRDs but use minimal configuration
-  skip_crds        = false
+  # Skip CRDs since they're already installed
+  skip_crds        = true
   wait             = true
   timeout          = 600
   cleanup_on_fail  = true
@@ -340,13 +410,13 @@ resource "helm_release" "ambassador" {
     })
   ]
 
-  depends_on = [kubernetes_namespace.ingress]
+  depends_on = [helm_release.ambassador_crds]
 }
 
 # Wait for Ambassador CRDs to be available
 resource "time_sleep" "wait_for_ambassador_crds" {
-  depends_on      = [helm_release.ambassador]
-  create_duration = "90s"
+  depends_on      = [helm_release.ambassador_crds]
+  create_duration = "30s"
 }
 
 # Wait for Ambassador CRDs to be ready
