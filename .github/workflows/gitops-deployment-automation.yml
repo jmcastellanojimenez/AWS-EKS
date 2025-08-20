@@ -229,11 +229,8 @@ jobs:
                 echo "Waiting for Tekton Task CRD..."
                 sleep 10
               done
-              while ! kubectl get crd eventlisteners.triggers.tekton.dev >/dev/null 2>&1; do
-                echo "Waiting for Tekton EventListener CRD..."
-                sleep 10
-              done
             '
+            # Note: EventListener CRD is part of Tekton Triggers which is not included in the base chart
             
             echo "✅ All CRDs are now available!"
             
