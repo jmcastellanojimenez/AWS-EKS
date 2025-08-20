@@ -186,7 +186,7 @@ jobs:
           cert_manager_ready=$(terraform output -raw cert_manager_ready 2>/dev/null || echo "false")
           external_dns_ready=$(terraform output -raw external_dns_ready 2>/dev/null || echo "false")
           
-          echo "ambassador-hostname=Check kubectl get svc ambassador -n ambassador" >> $GITHUB_OUTPUT
+          echo "ambassador-hostname=Check kubectl get svc ambassador-emissary-ingress -n ingress-system" >> $GITHUB_OUTPUT
           echo "cert-manager-ready=$cert_manager_ready" >> $GITHUB_OUTPUT
           echo "external-dns-ready=$external_dns_ready" >> $GITHUB_OUTPUT
           
@@ -206,17 +206,17 @@ jobs:
             
             # Check cert-manager
             echo "📜 Checking cert-manager..."
-            kubectl get pods -n cert-manager
+            kubectl get pods -n ingress-system -l app.kubernetes.io/name=cert-manager
             kubectl get clusterissuers
             
-            # Check external-dns
+            # Check external-dns (currently disabled)
             echo "🌍 Checking external-dns..."
-            kubectl get pods -n external-dns
+            kubectl get pods -n ingress-system -l app.kubernetes.io/name=external-dns || echo "External-DNS is temporarily disabled"
             
             # Check Ambassador
             echo "🚀 Checking Ambassador..."
-            kubectl get pods -n ambassador
-            kubectl get svc ambassador -n ambassador
+            kubectl get pods -n ingress-system -l app.kubernetes.io/name=ambassador
+            kubectl get svc ambassador-emissary-ingress -n ingress-system
             
             echo "✅ Stack verification completed!"
           fi
@@ -257,7 +257,7 @@ jobs:
               echo "- **Headroom**: ~2.8 CPU, ~1.2Gi memory remaining for future workflows" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-              echo "1. Get Ambassador Load Balancer hostname: \`kubectl get svc ambassador -n ambassador\`" >> $GITHUB_STEP_SUMMARY
+              echo "1. Get Ambassador Load Balancer hostname: \`kubectl get svc ambassador-emissary-ingress -n ingress-system\`" >> $GITHUB_STEP_SUMMARY
               echo "2. Configure DNS records to point to the Load Balancer" >> $GITHUB_STEP_SUMMARY
               echo "3. Deploy applications using Ambassador Mapping CRDs" >> $GITHUB_STEP_SUMMARY
               echo "4. Ready for Workflows 3-7: LGTM, ArgoCD, Security, Istio, Data services" >> $GITHUB_STEP_SUMMARY
