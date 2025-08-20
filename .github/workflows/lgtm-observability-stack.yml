@@ -224,8 +224,8 @@ jobs:
             
             # Check Prometheus
             echo "📊 Checking Prometheus..."
-            kubectl get pods -n observability -l app=prometheus-server
-            kubectl get svc -n observability prometheus-server
+            kubectl get pods -n observability -l app.kubernetes.io/name=prometheus
+            kubectl get svc -n observability -l app.kubernetes.io/name=prometheus
             
             # Check Grafana
             echo "📈 Checking Grafana..."
@@ -250,7 +250,7 @@ jobs:
             
             # Check S3 buckets
             echo "☁️  Checking S3 buckets..."
-            aws s3 ls | grep lgtm || echo "LGTM buckets not created yet"
+            aws s3 ls | grep "eks-platform-.*-data" || echo "Observability buckets not found"
             
             echo "✅ Stack verification completed!"
           fi
