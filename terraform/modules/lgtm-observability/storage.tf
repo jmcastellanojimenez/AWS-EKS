@@ -41,6 +41,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "mimir" {
     id     = "mimir_lifecycle"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     transition {
       days          = var.s3_transition_days
       storage_class = "STANDARD_IA"
@@ -96,6 +100,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "loki" {
     id     = "loki_lifecycle"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     transition {
       days          = var.s3_transition_days
       storage_class = "STANDARD_IA"
@@ -150,6 +158,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "tempo" {
   rule {
     id     = "tempo_lifecycle"
     status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
 
     transition {
       days          = var.s3_transition_days
