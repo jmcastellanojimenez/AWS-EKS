@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.11"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 }
 
@@ -99,6 +103,12 @@ resource "helm_release" "cert_manager" {
   depends_on = [kubernetes_namespace.ingress]
 }
 
+# Wait for cert-manager CRDs to be available
+resource "time_sleep" "wait_for_cert_manager_crds" {
+  depends_on      = [helm_release.cert_manager]
+  create_duration = "30s"
+}
+
 # ClusterIssuer for Let's Encrypt
 resource "kubernetes_manifest" "letsencrypt_issuer" {
   manifest = {
@@ -131,7 +141,7 @@ resource "kubernetes_manifest" "letsencrypt_issuer" {
     }
   }
 
-  depends_on = [helm_release.cert_manager]
+  depends_on = [time_sleep.wait_for_cert_manager_crds]
 }
 
 # Cloudflare API token secret
@@ -174,7 +184,7 @@ resource "helm_release" "external_dns" {
       policy        = "sync"
       registry      = "txt"
       txtOwnerId    = var.cluster_name
-      
+
       resources = {
         requests = {
           cpu    = "25m"
@@ -237,8 +247,8 @@ resource "helm_release" "ambassador" {
 
       autoscaling = {
         enabled                        = true
-        minReplicas                   = var.ambassador_replica_count
-        maxReplicas                   = var.ambassador_max_replicas
+        minReplicas                    = var.ambassador_replica_count
+        maxReplicas                    = var.ambassador_max_replicas
         targetCPUUtilizationPercentage = 70
       }
 
@@ -260,6 +270,12 @@ resource "helm_release" "ambassador" {
   depends_on = [kubernetes_namespace.ingress]
 }
 
+# Wait for Ambassador CRDs to be available
+resource "time_sleep" "wait_for_ambassador_crds" {
+  depends_on      = [helm_release.ambassador]
+  create_duration = "45s"
+}
+
 # Ambassador Module and Mappings
 resource "kubernetes_manifest" "ambassador_module" {
   manifest = {
@@ -274,21 +290,21 @@ resource "kubernetes_manifest" "ambassador_module" {
         diagnostics = {
           enabled = true
         }
-        lua_scripts = []
-        use_proxy_proto = false
-        use_remote_address = true
-        xff_num_trusted_hops = 1
-        server_name = var.domain_name
-        enable_grpc_http11_bridge = false
-        enable_grpc_web = false
-        proper_case = false
-        merge_slashes = false
+        lua_scripts                          = []
+        use_proxy_proto                      = false
+        use_remote_address                   = true
+        xff_num_trusted_hops                 = 1
+        server_name                          = var.domain_name
+        enable_grpc_http11_bridge            = false
+        enable_grpc_web                      = false
+        proper_case                          = false
+        merge_slashes                        = false
         reject_requests_with_escaped_slashes = false
       }
     }
   }
 
-  depends_on = [helm_release.ambassador]
+  depends_on = [time_sleep.wait_for_ambassador_crds]
 }
 
 # Default Ambassador Host
@@ -312,5 +328,5 @@ resource "kubernetes_manifest" "ambassador_host" {
     }
   }
 
-  depends_on = [helm_release.ambassador, helm_release.cert_manager]
+  depends_on = [time_sleep.wait_for_ambassador_crds, time_sleep.wait_for_cert_manager_crds]
 }
