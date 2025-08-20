@@ -187,9 +187,11 @@ jobs:
       - name: 📊 Terraform Plan (Full GitOps)
         if: needs.validate-inputs.outputs.action != 'destroy'
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        continue-on-error: true
         run: |
           echo "🔄 Planning full GitOps deployment..."
-          terraform plan -out=tfplan-full -target=module.gitops
+          echo "⚠️ Note: CRD errors are expected and will be resolved during staged deployment"
+          terraform plan -out=tfplan-full -target=module.gitops || true
 
       - name: 🚀 Terraform Apply (Staged Deployment)
         if: needs.validate-inputs.outputs.action == 'apply'
@@ -237,7 +239,9 @@ jobs:
             echo "✅ All CRDs are now available!"
             
             echo "🚀 Stage 2: Deploying full GitOps stack..."
-            terraform apply -auto-approve tfplan-full
+            echo "📋 Re-planning with CRDs now available..."
+            terraform plan -out=tfplan-full-stage2 -target=module.gitops
+            terraform apply -auto-approve tfplan-full-stage2
             
             echo "✅ GitOps deployment completed successfully!"
           else
