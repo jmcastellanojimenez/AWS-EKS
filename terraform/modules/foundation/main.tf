@@ -139,16 +139,8 @@ module "eks" {
     }
   }
 
-  # aws-auth configmap
-  manage_aws_auth_configmap = true
-
-  aws_auth_roles = [
-    {
-      rolearn  = module.eks_admins_iam_role.iam_role_arn
-      username = "eks-admin"
-      groups   = ["system:masters"]
-    },
-  ]
+  # aws-auth configmap - disabled to avoid circular dependency
+  manage_aws_auth_configmap = false
 
   tags = local.common_tags
 }

@@ -15,6 +15,16 @@ variable "cluster_name" {
   type        = string
 }
 
+variable "cluster_endpoint" {
+  description = "EKS cluster endpoint"
+  type        = string
+}
+
+variable "cluster_certificate_authority_data" {
+  description = "EKS cluster certificate authority data"
+  type        = string
+}
+
 variable "domain_name" {
   description = "Primary domain name"
   type        = string

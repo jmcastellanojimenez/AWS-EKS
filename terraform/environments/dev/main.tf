@@ -30,29 +30,7 @@ provider "aws" {
   }
 }
 
-data "aws_eks_cluster" "cluster" {
-  name = module.foundation.cluster_name
-  depends_on = [module.foundation]
-}
-
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.foundation.cluster_name
-  depends_on = [module.foundation]
-}
-
-provider "kubernetes" {
-  host                   = data.aws_eks_cluster.cluster.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = data.aws_eks_cluster.cluster.endpoint
-    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
-  }
-}
+# Kubernetes and Helm providers will be configured by individual modules as needed
 
 # Data sources
 data "aws_caller_identity" "current" {}
@@ -151,6 +129,8 @@ module "lgtm_observability" {
   project_name      = var.project_name
   environment      = var.environment
   cluster_name     = module.foundation.cluster_name
+  cluster_endpoint  = module.foundation.cluster_endpoint
+  cluster_certificate_authority_data = module.foundation.cluster_certificate_authority_data
   domain_name      = var.domain_name
   aws_region       = var.aws_region
 
@@ -224,94 +204,4 @@ module "data_services" {
   depends_on = [module.foundation, module.ingress, module.lgtm_observability]
 }
 
-# Install AWS Load Balancer Controller
-resource "helm_release" "aws_load_balancer_controller" {
-  name       = "aws-load-balancer-controller"
-  repository = "https://aws.github.io/eks-charts"
-  chart      = "aws-load-balancer-controller"
-  version    = "1.6.2"
-  namespace  = "kube-system"
-
-  set {
-    name  = "clusterName"
-    value = module.foundation.cluster_name
-  }
-
-  set {
-    name  = "serviceAccount.create"
-    value = "true"
-  }
-
-  set {
-    name  = "serviceAccount.name"
-    value = "aws-load-balancer-controller"
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.foundation.aws_load_balancer_controller_role_arn
-  }
-
-  set {
-    name  = "region"
-    value = var.aws_region
-  }
-
-  set {
-    name  = "vpcId"
-    value = module.foundation.vpc_id
-  }
-
-  depends_on = [module.foundation]
-}
-
-# Install Cluster Autoscaler
-resource "helm_release" "cluster_autoscaler" {
-  name       = "cluster-autoscaler"
-  repository = "https://kubernetes.github.io/autoscaler"
-  chart      = "cluster-autoscaler"
-  version    = "9.29.0"
-  namespace  = "kube-system"
-
-  set {
-    name  = "autoDiscovery.clusterName"
-    value = module.foundation.cluster_name
-  }
-
-  set {
-    name  = "awsRegion"
-    value = var.aws_region
-  }
-
-  set {
-    name  = "rbac.serviceAccount.create"
-    value = "true"
-  }
-
-  set {
-    name  = "rbac.serviceAccount.name"
-    value = "cluster-autoscaler"
-  }
-
-  set {
-    name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.foundation.cluster_autoscaler_role_arn
-  }
-
-  set {
-    name  = "extraArgs.scale-down-delay-after-add"
-    value = "10m"
-  }
-
-  set {
-    name  = "extraArgs.scale-down-unneeded-time"
-    value = "10m"
-  }
-
-  set {
-    name  = "extraArgs.scale-down-utilization-threshold"
-    value = "0.5"
-  }
-
-  depends_on = [module.foundation]
-}
+# AWS Load Balancer Controller and Cluster Autoscaler will be installed by the foundation module
