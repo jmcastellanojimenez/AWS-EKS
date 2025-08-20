@@ -30,8 +30,26 @@ provider "aws" {
   }
 }
 
-# Note: Kubernetes and Helm providers are configured in individual workflow files
-# This main.tf only contains the foundation platform
+# Data source for EKS cluster authentication
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.foundation.cluster_name
+}
+
+# Configure Kubernetes provider for EKS cluster
+provider "kubernetes" {
+  host                   = try(module.foundation.cluster_endpoint, "")
+  cluster_ca_certificate = try(base64decode(module.foundation.cluster_certificate_authority_data), "")
+  token                  = try(data.aws_eks_cluster_auth.cluster.token, "")
+}
+
+# Configure Helm provider for EKS cluster  
+provider "helm" {
+  kubernetes {
+    host                   = try(module.foundation.cluster_endpoint, "")
+    cluster_ca_certificate = try(base64decode(module.foundation.cluster_certificate_authority_data), "")
+    token                  = try(data.aws_eks_cluster_auth.cluster.token, "")
+  }
+}
 
 # Data source for AWS account ID
 data "aws_caller_identity" "current" {}
