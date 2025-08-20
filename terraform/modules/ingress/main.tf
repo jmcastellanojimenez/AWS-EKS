@@ -346,7 +346,38 @@ resource "helm_release" "ambassador" {
 # Wait for Ambassador CRDs to be available
 resource "time_sleep" "wait_for_ambassador_crds" {
   depends_on      = [helm_release.ambassador]
-  create_duration = "45s"
+  create_duration = "90s"
+}
+
+# Wait for Ambassador CRDs to be ready
+resource "null_resource" "wait_for_ambassador_crd_ready" {
+  triggers = {
+    cluster_name = var.cluster_name
+    aws_region   = var.aws_region
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Configure kubectl to use the EKS cluster
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
+      
+      # Wait for Ambassador CRDs to be available
+      echo "Waiting for Ambassador CRDs to be available..."
+      for i in {1..30}; do
+        if kubectl get crd modules.getambassador.io hosts.getambassador.io >/dev/null 2>&1; then
+          echo "Ambassador CRDs are now available"
+          break
+        fi
+        echo "Attempt $i/30: Waiting for Ambassador CRDs..."
+        sleep 10
+      done
+      
+      # Final verification
+      kubectl get crd modules.getambassador.io hosts.getambassador.io
+    EOT
+  }
+
+  depends_on = [time_sleep.wait_for_ambassador_crds]
 }
 
 # Ambassador Module and Mappings
@@ -394,7 +425,7 @@ EOF
     EOT
   }
 
-  depends_on = [time_sleep.wait_for_ambassador_crds]
+  depends_on = [null_resource.wait_for_ambassador_crd_ready]
 }
 
 # Default Ambassador Host
@@ -435,5 +466,5 @@ EOF
     EOT
   }
 
-  depends_on = [time_sleep.wait_for_ambassador_crds, time_sleep.wait_for_cert_manager_crds]
+  depends_on = [null_resource.wait_for_ambassador_crd_ready, time_sleep.wait_for_cert_manager_crds]
 }
