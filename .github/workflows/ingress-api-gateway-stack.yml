@@ -154,9 +154,9 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           if [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
-            terraform plan -destroy -out=tfplan -target=module.ambassador -target=module.external_dns -target=module.cert_manager
+            terraform plan -destroy -out=tfplan -target=module.ingress
           else
-            terraform plan -out=tfplan -target=module.cert_manager -target=module.external_dns -target=module.ambassador
+            terraform plan -out=tfplan -target=module.ingress
           fi
 
       - name: 🚀 Terraform Apply
