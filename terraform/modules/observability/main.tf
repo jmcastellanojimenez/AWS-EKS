@@ -740,22 +740,7 @@ resource "helm_release" "grafana" {
       }
 
       ingress = {
-        enabled = true
-        annotations = {
-          "kubernetes.io/ingress.class"                 = "ambassador"
-          "getambassador.io/config"                     = "---\napiVersion: getambassador.io/v3alpha1\nkind: Mapping\nname: grafana\nprefix: /grafana/\nservice: grafana.${kubernetes_namespace.observability.metadata[0].name}:80"
-        }
-        hosts = [
-          {
-            host = var.domain_name
-            paths = [
-              {
-                path     = "/grafana"
-                pathType = "Prefix"
-              }
-            ]
-          }
-        ]
+        enabled = false  # Disable ingress for now to avoid template errors
       }
     })
   ]
