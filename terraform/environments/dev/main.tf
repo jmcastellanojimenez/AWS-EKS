@@ -37,17 +37,17 @@ data "aws_eks_cluster_auth" "cluster" {
 
 # Configure Kubernetes provider for EKS cluster
 provider "kubernetes" {
-  host                   = module.foundation.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.foundation.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
+  host                   = try(module.foundation.cluster_endpoint, "")
+  cluster_ca_certificate = try(base64decode(module.foundation.cluster_certificate_authority_data), "")
+  token                  = try(data.aws_eks_cluster_auth.cluster.token, "")
 }
 
-# Configure Helm provider for EKS cluster
+# Configure Helm provider for EKS cluster  
 provider "helm" {
   kubernetes {
-    host                   = module.foundation.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.foundation.cluster_certificate_authority_data)
-    token                  = data.aws_eks_cluster_auth.cluster.token
+    host                   = try(module.foundation.cluster_endpoint, "")
+    cluster_ca_certificate = try(base64decode(module.foundation.cluster_certificate_authority_data), "")
+    token                  = try(data.aws_eks_cluster_auth.cluster.token, "")
   }
 }
 
