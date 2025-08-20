@@ -400,10 +400,7 @@ resource "helm_release" "ambassador" {
         create = false
       }
 
-      # Force minimal installation - just the core workload
-      image = {
-        repository = "docker.io/datawire/emissary"
-      }
+      # Use default image from Helm chart (emissary-ingress official image)
 
       # Additional safety measures
       deploymentStrategy = {
@@ -427,12 +424,12 @@ resource "helm_release" "ambassador" {
 
       resources = {
         requests = {
-          cpu    = "50m"
-          memory = "128Mi"
+          cpu    = "100m"
+          memory = "256Mi"
         }
         limits = {
-          cpu    = "200m"
-          memory = "256Mi"
+          cpu    = "500m"
+          memory = "512Mi"
         }
       }
 
