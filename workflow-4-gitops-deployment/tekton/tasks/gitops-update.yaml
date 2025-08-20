@@ -1,0 +1,409 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: gitops-update
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/version: "0.1"
+    app.kubernetes.io/part-of: gitops-platform
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/categories: GitOps
+    tekton.dev/tags: git, gitops, argocd, kustomize
+    tekton.dev/displayName: "GitOps Manifest Update Task"
+    tekton.dev/platforms: "linux/amd64,linux/arm64"
+spec:
+  description: >-
+    This task updates GitOps manifests with new image references,
+    supporting both Kustomize and direct YAML manifest updates.
+
+  params:
+    - name: GIT_REPOSITORY
+      description: Git repository URL for manifests
+      type: string
+    - name: GIT_BRANCH
+      description: Git branch to update
+      type: string
+      default: "main"
+    - name: GIT_USER_NAME
+      description: Git user name for commits
+      type: string
+      default: "Tekton Pipeline"
+    - name: GIT_USER_EMAIL
+      description: Git user email for commits
+      type: string
+      default: "tekton@ecotrack.local"
+    - name: SERVICE_NAME
+      description: Name of the service to update
+      type: string
+    - name: ENVIRONMENT
+      description: Target environment (dev, staging, prod)
+      type: string
+      default: "dev"
+    - name: NEW_IMAGE
+      description: New container image reference
+      type: string
+    - name: MANIFEST_PATH
+      description: Path to manifests in the repository
+      type: string
+      default: "environments"
+    - name: MANIFEST_TYPE
+      description: Type of manifests (kustomize, yaml, helm)
+      type: string
+      default: "kustomize"
+    - name: COMMIT_MESSAGE
+      description: Custom commit message template
+      type: string
+      default: "chore: update {service} image to {tag} in {environment}"
+    - name: CREATE_PR
+      description: Create pull request instead of direct commit
+      type: string
+      default: "false"
+    - name: PR_TITLE
+      description: Pull request title template
+      type: string
+      default: "🚀 Deploy {service} {tag} to {environment}"
+
+  workspaces:
+    - name: manifest-repo
+      description: Workspace for cloning the manifest repository
+    - name: git-credentials
+      description: Git credentials workspace
+      optional: true
+
+  results:
+    - name: COMMIT_SHA
+      description: SHA of the commit created
+    - name: PR_URL
+      description: URL of the pull request created (if applicable)
+
+  steps:
+    - name: clone-manifests
+      image: alpine/git:2.40.1
+      workingDir: $(workspaces.manifest-repo.path)
+      env:
+        - name: GIT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: username
+              optional: true
+        - name: GIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: password
+              optional: true
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "📥 Cloning manifest repository..."
+        
+        # Set up git credentials if provided
+        if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_PASSWORD" ]; then
+          echo "🔐 Setting up git credentials..."
+          git config --global credential.helper store
+          echo "https://$GIT_USERNAME:$GIT_PASSWORD@github.com" > ~/.git-credentials
+        fi
+        
+        # Clone the repository
+        git clone --branch $(params.GIT_BRANCH) --depth 1 $(params.GIT_REPOSITORY) manifests
+        cd manifests
+        
+        # Configure git user
+        git config user.name "$(params.GIT_USER_NAME)"
+        git config user.email "$(params.GIT_USER_EMAIL)"
+        
+        echo "✅ Repository cloned successfully"
+
+    - name: extract-image-info
+      image: alpine:3.18
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "🔍 Extracting image information..."
+        
+        NEW_IMAGE="$(params.NEW_IMAGE)"
+        echo "📦 New image: $NEW_IMAGE"
+        
+        # Extract tag from image reference
+        if echo "$NEW_IMAGE" | grep -q "@sha256:"; then
+          # Digest-based reference
+          TAG=$(echo "$NEW_IMAGE" | sed 's/.*://' | cut -c1-12)
+          IMAGE_BASE=$(echo "$NEW_IMAGE" | sed 's/@.*//')
+        else
+          # Tag-based reference
+          TAG=$(echo "$NEW_IMAGE" | sed 's/.*://')
+          IMAGE_BASE=$(echo "$NEW_IMAGE" | sed 's/:.*//')
+        fi
+        
+        echo "🏷️ Extracted tag: $TAG"
+        echo "📦 Image base: $IMAGE_BASE"
+        
+        # Store for use in other steps
+        echo -n "$TAG" > /tmp/image-tag
+        echo -n "$IMAGE_BASE" > /tmp/image-base
+
+    - name: update-kustomize
+      image: k8s.gcr.io/kustomize/kustomize:v5.2.1
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      when:
+        - input: "$(params.MANIFEST_TYPE)"
+          operator: in
+          values: ["kustomize"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "🔧 Updating Kustomize manifests..."
+        
+        MANIFEST_DIR="$(params.MANIFEST_PATH)/$(params.ENVIRONMENT)/$(params.SERVICE_NAME)"
+        
+        if [ ! -d "$MANIFEST_DIR" ]; then
+          echo "❌ Error: Manifest directory not found: $MANIFEST_DIR"
+          exit 1
+        fi
+        
+        cd "$MANIFEST_DIR"
+        
+        # Check if kustomization.yaml exists
+        if [ ! -f "kustomization.yaml" ] && [ ! -f "kustomization.yml" ]; then
+          echo "❌ Error: kustomization.yaml not found in $MANIFEST_DIR"
+          exit 1
+        fi
+        
+        # Update image with kustomize
+        echo "🔄 Updating image in kustomization..."
+        IMAGE_BASE=$(cat /tmp/image-base)
+        kustomize edit set image "$IMAGE_BASE=$(params.NEW_IMAGE)"
+        
+        echo "✅ Kustomize manifests updated"
+
+    - name: update-yaml
+      image: mikefarah/yq:4.40.5
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      when:
+        - input: "$(params.MANIFEST_TYPE)"
+          operator: in
+          values: ["yaml"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "📝 Updating YAML manifests..."
+        
+        MANIFEST_DIR="$(params.MANIFEST_PATH)/$(params.ENVIRONMENT)/$(params.SERVICE_NAME)"
+        
+        if [ ! -d "$MANIFEST_DIR" ]; then
+          echo "❌ Error: Manifest directory not found: $MANIFEST_DIR"
+          exit 1
+        fi
+        
+        cd "$MANIFEST_DIR"
+        
+        # Find and update deployment files
+        for file in *.yaml *.yml; do
+          if [ -f "$file" ] && grep -q "kind: Deployment" "$file"; then
+            echo "🔄 Updating image in $file..."
+            
+            # Update container image
+            yq eval "(.spec.template.spec.containers[] | select(.name == \"$(params.SERVICE_NAME)\") | .image) = \"$(params.NEW_IMAGE)\"" -i "$file"
+            
+            echo "✅ Updated $file"
+          fi
+        done
+
+    - name: update-helm
+      image: alpine/helm:3.14.0
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      when:
+        - input: "$(params.MANIFEST_TYPE)"
+          operator: in
+          values: ["helm"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "⎈ Updating Helm values..."
+        
+        VALUES_DIR="$(params.MANIFEST_PATH)/$(params.ENVIRONMENT)/$(params.SERVICE_NAME)"
+        VALUES_FILE="$VALUES_DIR/values.yaml"
+        
+        if [ ! -f "$VALUES_FILE" ]; then
+          echo "❌ Error: Helm values file not found: $VALUES_FILE"
+          exit 1
+        fi
+        
+        # Update image in values file using yq
+        echo "🔄 Updating image in $VALUES_FILE..."
+        
+        # Extract image parts
+        IMAGE_BASE=$(cat /tmp/image-base)
+        TAG=$(cat /tmp/image-tag)
+        REPOSITORY=$(echo "$IMAGE_BASE" | sed 's|.*/||')
+        REGISTRY=$(echo "$IMAGE_BASE" | sed 's|/[^/]*$||')
+        
+        # Update values file
+        yq eval ".image.repository = \"$REPOSITORY\"" -i "$VALUES_FILE"
+        yq eval ".image.tag = \"$TAG\"" -i "$VALUES_FILE"
+        yq eval ".image.registry = \"$REGISTRY\"" -i "$VALUES_FILE"
+        
+        echo "✅ Helm values updated"
+
+    - name: commit-changes
+      image: alpine/git:2.40.1
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      env:
+        - name: GIT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: username
+              optional: true
+        - name: GIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: password
+              optional: true
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "💾 Committing changes..."
+        
+        # Check if there are any changes
+        if git diff --quiet; then
+          echo "ℹ️ No changes to commit"
+          echo -n "no-changes" > $(results.COMMIT_SHA.path)
+          exit 0
+        fi
+        
+        # Stage changes
+        git add .
+        
+        # Create commit message
+        TAG=$(cat /tmp/image-tag)
+        COMMIT_MSG=$(echo "$(params.COMMIT_MESSAGE)" | \
+          sed "s/{service}/$(params.SERVICE_NAME)/g" | \
+          sed "s/{tag}/$TAG/g" | \
+          sed "s/{environment}/$(params.ENVIRONMENT)/g")
+        
+        echo "📝 Commit message: $COMMIT_MSG"
+        
+        # Commit changes
+        git commit -m "$COMMIT_MSG"
+        
+        # Get commit SHA
+        COMMIT_SHA=$(git rev-parse HEAD)
+        echo "📋 Commit SHA: $COMMIT_SHA"
+        echo -n "$COMMIT_SHA" > $(results.COMMIT_SHA.path)
+        
+        # Push changes if not creating PR
+        if [ "$(params.CREATE_PR)" != "true" ]; then
+          echo "📤 Pushing changes to $(params.GIT_BRANCH)..."
+          git push origin $(params.GIT_BRANCH)
+          echo "✅ Changes pushed successfully"
+        else
+          echo "🔀 Preparing for pull request creation..."
+          # Create feature branch for PR
+          BRANCH_NAME="deploy-$(params.SERVICE_NAME)-$TAG-$(params.ENVIRONMENT)"
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
+          echo "🔀 Feature branch $BRANCH_NAME created"
+        fi
+
+    - name: create-pull-request
+      image: alpine:3.18
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      when:
+        - input: "$(params.CREATE_PR)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: token
+              optional: true
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "🔀 Creating pull request..."
+        
+        if [ -z "$GITHUB_TOKEN" ]; then
+          echo "❌ Error: GitHub token not provided"
+          exit 1
+        fi
+        
+        # Install gh CLI
+        apk add --no-cache curl
+        curl -fsSL https://github.com/cli/cli/releases/download/v2.40.1/gh_2.40.1_linux_amd64.tar.gz | tar -xz
+        mv gh_2.40.1_linux_amd64/bin/gh /usr/local/bin/
+        
+        # Authenticate with GitHub
+        echo "$GITHUB_TOKEN" | gh auth login --with-token
+        
+        # Create PR
+        TAG=$(cat /tmp/image-tag)
+        PR_TITLE=$(echo "$(params.PR_TITLE)" | \
+          sed "s/{service}/$(params.SERVICE_NAME)/g" | \
+          sed "s/{tag}/$TAG/g" | \
+          sed "s/{environment}/$(params.ENVIRONMENT)/g")
+        
+        BRANCH_NAME="deploy-$(params.SERVICE_NAME)-$TAG-$(params.ENVIRONMENT)"
+        
+        PR_BODY="## Deployment Update
+        
+        **Service:** $(params.SERVICE_NAME)
+        **Environment:** $(params.ENVIRONMENT)
+        **Image:** $(params.NEW_IMAGE)
+        **Manifest Type:** $(params.MANIFEST_TYPE)
+        
+        This PR updates the GitOps manifests for deploying the new version.
+        
+        ---
+        *Generated by Tekton Pipeline*"
+        
+        PR_URL=$(gh pr create \
+          --title "$PR_TITLE" \
+          --body "$PR_BODY" \
+          --base $(params.GIT_BRANCH) \
+          --head "$BRANCH_NAME")
+        
+        echo "🔗 Pull request created: $PR_URL"
+        echo -n "$PR_URL" > $(results.PR_URL.path)
+
+    - name: update-summary
+      image: alpine:3.18
+      workingDir: $(workspaces.manifest-repo.path)/manifests
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "📋 GitOps Update Summary"
+        echo "======================="
+        echo "Service: $(params.SERVICE_NAME)"
+        echo "Environment: $(params.ENVIRONMENT)"
+        echo "New Image: $(params.NEW_IMAGE)"
+        echo "Manifest Type: $(params.MANIFEST_TYPE)"
+        echo "Repository: $(params.GIT_REPOSITORY)"
+        echo "Branch: $(params.GIT_BRANCH)"
+        
+        if [ -f "$(results.COMMIT_SHA.path)" ]; then
+          COMMIT_SHA=$(cat $(results.COMMIT_SHA.path))
+          echo "Commit SHA: $COMMIT_SHA"
+        fi
+        
+        if [ -f "$(results.PR_URL.path)" ]; then
+          PR_URL=$(cat $(results.PR_URL.path))
+          echo "Pull Request: $PR_URL"
+        fi
+        
+        echo ""
+        echo "✅ GitOps update completed successfully!"

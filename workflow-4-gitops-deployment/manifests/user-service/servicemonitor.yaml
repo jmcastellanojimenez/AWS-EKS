@@ -1,0 +1,239 @@
+# ServiceMonitor for Prometheus monitoring of User Service
+# Integrates with the LGTM observability stack
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: user-service-metrics
+  namespace: ecotrack-dev
+  labels:
+    app: user-service
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: monitoring
+    monitoring: lgtm-stack
+spec:
+  # Service selector
+  selector:
+    matchLabels:
+      app: user-service
+  
+  # Namespace selector
+  namespaceSelector:
+    matchNames:
+      - ecotrack-dev
+  
+  # Endpoints configuration
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: false
+      
+      # Metric relabeling
+      metricRelabelings:
+        # Add service and environment labels
+        - sourceLabels: [__name__]
+          regex: '.*'
+          targetLabel: service
+          replacement: 'user-service'
+        - sourceLabels: [__name__]
+          regex: '.*'
+          targetLabel: environment
+          replacement: 'development'
+        
+        # Relabel JVM metrics for consistency
+        - sourceLabels: [__name__]
+          regex: 'jvm_(.+)'
+          targetLabel: __name__
+          replacement: 'ecotrack_jvm_${1}'
+        
+        # Relabel HTTP metrics
+        - sourceLabels: [__name__]
+          regex: 'http_(.+)'
+          targetLabel: __name__
+          replacement: 'ecotrack_http_${1}'
+        
+        # Relabel application-specific metrics
+        - sourceLabels: [__name__]
+          regex: 'application_(.+)'
+          targetLabel: __name__
+          replacement: 'ecotrack_user_${1}'
+      
+      # Target relabeling
+      relabelings:
+        # Add Kubernetes metadata
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_service_name]
+          targetLabel: service
+        
+        # Add custom labels
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_version]
+          targetLabel: version
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          targetLabel: component
+        
+        # Add instance label
+        - sourceLabels: [__meta_kubernetes_pod_ip]
+          targetLabel: instance
+          replacement: '${1}:8081'
+
+---
+# PodMonitor for additional pod-level metrics
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: user-service-pod-metrics
+  namespace: ecotrack-dev
+  labels:
+    app: user-service
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: monitoring
+    monitoring: lgtm-stack
+spec:
+  # Pod selector
+  selector:
+    matchLabels:
+      app: user-service
+  
+  # Namespace selector
+  namespaceSelector:
+    matchNames:
+      - ecotrack-dev
+  
+  # Pod endpoints
+  podMetricsEndpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      
+      # Additional metrics specific to pod monitoring
+      metricRelabelings:
+        # Add pod-specific labels
+        - sourceLabels: [__name__]
+          regex: '.*'
+          targetLabel: monitored_by
+          replacement: 'pod-monitor'
+
+---
+# PrometheusRule for User Service alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: user-service-alerts
+  namespace: ecotrack-dev
+  labels:
+    app: user-service
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: monitoring
+    monitoring: lgtm-stack
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: user-service.rules
+      interval: 30s
+      rules:
+        # High error rate alert
+        - alert: UserServiceHighErrorRate
+          expr: |
+            (
+              rate(ecotrack_http_server_requests_seconds_count{service="user-service",status=~"5.."}[5m])
+              /
+              rate(ecotrack_http_server_requests_seconds_count{service="user-service"}[5m])
+            ) > 0.05
+          for: 2m
+          labels:
+            severity: warning
+            service: user-service
+            environment: development
+          annotations:
+            summary: "User Service has high error rate"
+            description: "User Service error rate is {{ $value | humanizePercentage }} for more than 2 minutes"
+            runbook_url: "https://wiki.ecotrack.com/runbooks/user-service-high-error-rate"
+        
+        # High response time alert
+        - alert: UserServiceHighLatency
+          expr: |
+            histogram_quantile(0.95, 
+              rate(ecotrack_http_server_requests_seconds_bucket{service="user-service"}[5m])
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+            service: user-service
+            environment: development
+          annotations:
+            summary: "User Service has high response time"
+            description: "User Service 95th percentile latency is {{ $value }}s for more than 5 minutes"
+            runbook_url: "https://wiki.ecotrack.com/runbooks/user-service-high-latency"
+        
+        # Pod down alert
+        - alert: UserServicePodDown
+          expr: |
+            up{job="user-service-metrics"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            service: user-service
+            environment: development
+          annotations:
+            summary: "User Service pod is down"
+            description: "User Service pod {{ $labels.instance }} has been down for more than 1 minute"
+            runbook_url: "https://wiki.ecotrack.com/runbooks/user-service-pod-down"
+        
+        # Memory usage alert
+        - alert: UserServiceHighMemoryUsage
+          expr: |
+            (
+              ecotrack_jvm_memory_used_bytes{service="user-service",area="heap"}
+              /
+              ecotrack_jvm_memory_max_bytes{service="user-service",area="heap"}
+            ) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            service: user-service
+            environment: development
+          annotations:
+            summary: "User Service memory usage is high"
+            description: "User Service memory usage is {{ $value | humanizePercentage }} for more than 5 minutes"
+            runbook_url: "https://wiki.ecotrack.com/runbooks/user-service-high-memory"
+        
+        # Database connection pool alert
+        - alert: UserServiceDatabaseConnectionPoolExhausted
+          expr: |
+            hikaricp_connections_active{service="user-service"} / hikaricp_connections_max{service="user-service"} > 0.8
+          for: 3m
+          labels:
+            severity: warning
+            service: user-service
+            environment: development
+          annotations:
+            summary: "User Service database connection pool usage is high"
+            description: "User Service is using {{ $value | humanizePercentage }} of database connections for more than 3 minutes"
+            runbook_url: "https://wiki.ecotrack.com/runbooks/user-service-db-pool-exhausted"
+        
+        # Custom business metric alert
+        - alert: UserServiceLowUserRegistrations
+          expr: |
+            rate(ecotrack_user_registrations_total{service="user-service"}[1h]) < 0.1
+          for: 30m
+          labels:
+            severity: info
+            service: user-service
+            environment: development
+            type: business-metric
+          annotations:
+            summary: "User Service has low user registration rate"
+            description: "User registration rate is {{ $value }} registrations per second over the last hour"
+            runbook_url: "https://wiki.ecotrack.com/runbooks/user-service-low-registrations"

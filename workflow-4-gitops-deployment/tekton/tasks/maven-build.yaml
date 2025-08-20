@@ -1,0 +1,243 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: maven-build
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/version: "0.1"
+    app.kubernetes.io/part-of: gitops-platform
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/categories: Build Tools
+    tekton.dev/tags: java, maven, build
+    tekton.dev/displayName: "Maven Build Task"
+    tekton.dev/platforms: "linux/amd64,linux/arm64"
+spec:
+  description: >-
+    This task builds Java applications using Maven with support for
+    multiple Java versions, caching, and optional GraalVM native compilation.
+
+  params:
+    - name: JAVA_VERSION
+      description: Java version to use (11, 17, 21)
+      type: string
+      default: "17"
+    - name: MAVEN_IMAGE
+      description: Maven image to use
+      type: string
+      default: "maven:3.9-eclipse-temurin-17"
+    - name: MAVEN_GOALS
+      description: Maven goals to execute
+      type: string
+      default: "clean package"
+    - name: MAVEN_OPTS
+      description: Maven JVM options
+      type: string
+      default: "-Xmx2048m -Dmaven.compiler.source=$(params.JAVA_VERSION) -Dmaven.compiler.target=$(params.JAVA_VERSION)"
+    - name: MAVEN_ARGS
+      description: Additional Maven arguments
+      type: string
+      default: "-DskipTests=false -B"
+    - name: CONTEXT_DIR
+      description: Path to the directory containing pom.xml
+      type: string
+      default: "."
+    - name: ENABLE_NATIVE_BUILD
+      description: Enable GraalVM native image compilation
+      type: string
+      default: "false"
+    - name: NATIVE_IMAGE_ARGS
+      description: Additional native image arguments
+      type: string
+      default: "--no-fallback --enable-http --enable-https"
+
+  workspaces:
+    - name: source
+      description: Workspace containing the source code
+    - name: maven-cache
+      description: Workspace for Maven cache
+      optional: true
+
+  results:
+    - name: VERSION
+      description: Application version from pom.xml
+    - name: ARTIFACT_NAME
+      description: Name of the built artifact
+    - name: BUILD_TYPE
+      description: Type of build (jvm or native)
+
+  steps:
+    - name: setup-java
+      image: "$(params.MAVEN_IMAGE)"
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+      env:
+        - name: JAVA_VERSION
+          value: "$(params.JAVA_VERSION)"
+        - name: MAVEN_OPTS
+          value: "$(params.MAVEN_OPTS)"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "🔧 Setting up Java $(params.JAVA_VERSION) environment..."
+        java -version
+        mvn --version
+        
+        # Validate pom.xml exists
+        if [ ! -f "pom.xml" ]; then
+          echo "❌ Error: pom.xml not found in $(pwd)"
+          exit 1
+        fi
+        
+        echo "✅ Java environment setup complete"
+
+    - name: maven-build
+      image: "$(params.MAVEN_IMAGE)"
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+      env:
+        - name: MAVEN_OPTS
+          value: "$(params.MAVEN_OPTS)"
+        - name: MAVEN_CONFIG
+          value: "$(workspaces.maven-cache.path)/.m2"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "🏗️ Starting Maven build..."
+        echo "Goals: $(params.MAVEN_GOALS)"
+        echo "Args: $(params.MAVEN_ARGS)"
+        
+        # Set up Maven cache if workspace is available
+        if [ -d "$(workspaces.maven-cache.path)" ]; then
+          export MAVEN_CONFIG="$(workspaces.maven-cache.path)/.m2"
+          mkdir -p "$MAVEN_CONFIG"
+          echo "📦 Using Maven cache at $MAVEN_CONFIG"
+        fi
+        
+        # Execute Maven build
+        mvn $(params.MAVEN_GOALS) $(params.MAVEN_ARGS)
+        
+        # Extract version from pom.xml
+        VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+        echo "📋 Project version: $VERSION"
+        echo -n "$VERSION" > $(results.VERSION.path)
+        
+        # Extract artifact name
+        ARTIFACT_ID=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout)
+        echo "📦 Artifact ID: $ARTIFACT_ID"
+        echo -n "$ARTIFACT_ID" > $(results.ARTIFACT_NAME.path)
+        
+        # Set build type
+        echo -n "jvm" > $(results.BUILD_TYPE.path)
+        
+        echo "✅ Maven build completed successfully"
+
+    - name: native-build
+      image: "quay.io/quarkus/ubi-quarkus-graalvmce-builder-image:22.3-java17"
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+      when:
+        - input: "$(params.ENABLE_NATIVE_BUILD)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      env:
+        - name: MAVEN_OPTS
+          value: "$(params.MAVEN_OPTS)"
+        - name: MAVEN_CONFIG
+          value: "$(workspaces.maven-cache.path)/.m2"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "🚀 Starting GraalVM native image build..."
+        
+        # Set up Maven cache if workspace is available
+        if [ -d "$(workspaces.maven-cache.path)" ]; then
+          export MAVEN_CONFIG="$(workspaces.maven-cache.path)/.m2"
+          mkdir -p "$MAVEN_CONFIG"
+        fi
+        
+        # Check if project supports native builds
+        if grep -q "native-image-maven-plugin\|quarkus-maven-plugin\|spring-boot-maven-plugin" pom.xml; then
+          echo "📋 Native build support detected"
+          
+          # Build native image
+          mvn package -Pnative $(params.MAVEN_ARGS) $(params.NATIVE_IMAGE_ARGS)
+          
+          # Update build type
+          echo -n "native" > $(results.BUILD_TYPE.path)
+          
+          echo "✅ Native image build completed"
+        else
+          echo "⚠️ Warning: Native build requested but no native plugin found"
+          echo "ℹ️ Falling back to JVM build"
+        fi
+
+    - name: test-results
+      image: "$(params.MAVEN_IMAGE)"
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "📊 Collecting test results..."
+        
+        # Find and display test results
+        if [ -d "target/surefire-reports" ]; then
+          echo "🧪 Unit test results:"
+          find target/surefire-reports -name "*.xml" -exec basename {} \; | head -10
+          
+          # Count tests
+          TEST_COUNT=$(find target/surefire-reports -name "TEST-*.xml" | wc -l)
+          echo "📈 Total test files: $TEST_COUNT"
+        fi
+        
+        if [ -d "target/failsafe-reports" ]; then
+          echo "🔧 Integration test results:"
+          find target/failsafe-reports -name "*.xml" -exec basename {} \; | head -10
+        fi
+        
+        # Check for code coverage
+        if [ -d "target/site/jacoco" ]; then
+          echo "📊 Code coverage reports generated"
+        fi
+        
+        echo "✅ Test results collection completed"
+
+    - name: build-summary
+      image: "$(params.MAVEN_IMAGE)"
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT_DIR)
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "📋 Build Summary"
+        echo "==============="
+        echo "Project: $(cat $(results.ARTIFACT_NAME.path))"
+        echo "Version: $(cat $(results.VERSION.path))"
+        echo "Build Type: $(cat $(results.BUILD_TYPE.path))"
+        echo "Java Version: $(params.JAVA_VERSION)"
+        echo "Maven Goals: $(params.MAVEN_GOALS)"
+        
+        # Show built artifacts
+        echo ""
+        echo "📦 Built Artifacts:"
+        if [ -d "target" ]; then
+          find target -name "*.jar" -o -name "*-runner" | head -10
+        fi
+        
+        echo ""
+        echo "✅ Build completed successfully!"
+
+  sidecars:
+    - name: maven-daemon
+      image: "$(params.MAVEN_IMAGE)"
+      command:
+        - sleep
+        - "3600"
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi

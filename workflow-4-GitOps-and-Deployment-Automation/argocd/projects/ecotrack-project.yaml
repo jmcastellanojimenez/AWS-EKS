@@ -1,0 +1,236 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ecotrack
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecotrack-project
+    app.kubernetes.io/part-of: ecotrack
+spec:
+  description: EcoTrack microservices platform project
+  
+  # Source repositories that apps in this project can pull from
+  sourceRepos:
+  - 'https://github.com/your-org/ecotrack-*'
+  - 'https://github.com/your-org/ecotrack-manifests'
+  - 'https://charts.helm.sh/stable'
+  - 'https://kubernetes.github.io/ingress-nginx'
+  - 'https://prometheus-community.github.io/helm-charts'
+  - 'https://grafana.github.io/helm-charts'
+  - '*'  # Allow any repository for development
+  
+  # Destinations where apps in this project can be deployed
+  destinations:
+  - namespace: 'ecotrack-*'
+    server: https://kubernetes.default.svc
+  - namespace: 'default'
+    server: https://kubernetes.default.svc
+  - namespace: 'monitoring'
+    server: https://kubernetes.default.svc
+  - namespace: 'ingress-nginx'
+    server: https://kubernetes.default.svc
+  
+  # Cluster-scoped resources allowed to be managed
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: 'rbac.authorization.k8s.io'
+    kind: ClusterRole
+  - group: 'rbac.authorization.k8s.io'
+    kind: ClusterRoleBinding
+  - group: 'apiextensions.k8s.io'
+    kind: CustomResourceDefinition
+  - group: 'networking.k8s.io'
+    kind: IngressClass
+  - group: 'storage.k8s.io'
+    kind: StorageClass
+  - group: 'admissionregistration.k8s.io'
+    kind: ValidatingAdmissionWebhook
+  - group: 'admissionregistration.k8s.io'
+    kind: MutatingAdmissionWebhook
+  
+  # Namespace-scoped resources allowed to be managed
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: PersistentVolumeClaim
+  - group: ''
+    kind: ServiceAccount
+  - group: 'apps'
+    kind: Deployment
+  - group: 'apps'
+    kind: StatefulSet
+  - group: 'apps'
+    kind: DaemonSet
+  - group: 'apps'
+    kind: ReplicaSet
+  - group: 'batch'
+    kind: Job
+  - group: 'batch'
+    kind: CronJob
+  - group: 'networking.k8s.io'
+    kind: Ingress
+  - group: 'networking.k8s.io'
+    kind: NetworkPolicy
+  - group: 'rbac.authorization.k8s.io'
+    kind: Role
+  - group: 'rbac.authorization.k8s.io'
+    kind: RoleBinding
+  - group: 'policy'
+    kind: PodDisruptionBudget
+  - group: 'autoscaling'
+    kind: HorizontalPodAutoscaler
+  - group: 'monitoring.coreos.com'
+    kind: ServiceMonitor
+  - group: 'monitoring.coreos.com'
+    kind: PodMonitor
+  - group: 'networking.istio.io'
+    kind: VirtualService
+  - group: 'networking.istio.io'
+    kind: DestinationRule
+  - group: 'networking.istio.io'
+    kind: Gateway
+  - group: 'security.istio.io'
+    kind: AuthorizationPolicy
+  - group: 'security.istio.io'
+    kind: PeerAuthentication
+  
+  # Sync policies
+  syncWindows:
+  - kind: allow
+    schedule: '* * * * *'
+    duration: 1h
+    applications:
+    - '*'
+    manualSync: true
+  - kind: deny
+    schedule: '0 2 * * *'
+    duration: 1h
+    applications:
+    - '*-prod'
+    manualSync: false
+  
+  # RBAC roles for project
+  roles:
+  - name: admin
+    description: Admin access to EcoTrack project
+    policies:
+    - p, proj:ecotrack:admin, applications, *, ecotrack/*, allow
+    - p, proj:ecotrack:admin, clusters, *, *, allow
+    - p, proj:ecotrack:admin, repositories, *, ecotrack/*, allow
+    - p, proj:ecotrack:admin, exec, create, ecotrack/*, allow
+    groups:
+    - ecotrack-admins
+    
+  - name: developer
+    description: Developer access to EcoTrack project
+    policies:
+    - p, proj:ecotrack:developer, applications, get, ecotrack/*, allow
+    - p, proj:ecotrack:developer, applications, sync, ecotrack/*, allow
+    - p, proj:ecotrack:developer, applications, override, ecotrack/*, allow
+    - p, proj:ecotrack:developer, applications, action/*, ecotrack/*, allow
+    - p, proj:ecotrack:developer, repositories, get, ecotrack/*, allow
+    - p, proj:ecotrack:developer, logs, get, ecotrack/*, allow
+    groups:
+    - ecotrack-developers
+    
+  - name: readonly
+    description: Read-only access to EcoTrack project
+    policies:
+    - p, proj:ecotrack:readonly, applications, get, ecotrack/*, allow
+    - p, proj:ecotrack:readonly, repositories, get, ecotrack/*, allow
+    - p, proj:ecotrack:readonly, logs, get, ecotrack/*, allow
+    groups:
+    - ecotrack-viewers
+    
+  # Signature keys for Git commit verification
+  signatureKeys:
+  - keyID: ABCDEF1234567890
+
+---
+# Namespace for EcoTrack development environment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecotrack-dev
+  labels:
+    name: ecotrack-dev
+    environment: development
+    project: ecotrack
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/managed-by: argocd
+
+---
+# Namespace for EcoTrack staging environment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecotrack-staging
+  labels:
+    name: ecotrack-staging
+    environment: staging
+    project: ecotrack
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/managed-by: argocd
+
+---
+# Namespace for EcoTrack production environment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecotrack-prod
+  labels:
+    name: ecotrack-prod
+    environment: production
+    project: ecotrack
+    managed-by: argocd
+  annotations:
+    argocd.argoproj.io/managed-by: argocd
+
+---
+# Network policy for development environment
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ecotrack-dev-netpol
+  namespace: ecotrack-dev
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: observability
+    - namespaceSelector:
+        matchLabels:
+          name: ecotrack-dev
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: ecotrack-dev
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

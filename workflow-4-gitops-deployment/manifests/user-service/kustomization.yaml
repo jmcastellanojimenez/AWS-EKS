@@ -1,0 +1,136 @@
+# Kustomization file for EcoTrack User Service
+# This demonstrates the GitOps manifest structure using Kustomize
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: user-service-dev
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Namespace for all resources
+namespace: ecotrack-dev
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: user-service
+  app.kubernetes.io/part-of: ecotrack
+  app.kubernetes.io/component: microservice
+  app.kubernetes.io/managed-by: kustomize
+  environment: development
+
+# Common annotations
+commonAnnotations:
+  app.kubernetes.io/managed-by: argocd
+  config.kubernetes.io/origin: |
+    configuredIn: 04-gitops-deployment-automation/manifests/user-service/kustomization.yaml
+    configuredBy:
+      apiVersion: kustomize.config.k8s.io/v1beta1
+      kind: Kustomization
+
+# Resources to include
+resources:
+  - deployment.yaml
+  - networkpolicy.yaml
+  - servicemonitor.yaml
+
+# Image configurations (updated by Tekton pipelines)
+images:
+  - name: ${CONTAINER_REGISTRY}/ecotrack/user-service
+    newTag: latest
+
+# ConfigMap and Secret generators
+configMapGenerator:
+  - name: user-service-env-config
+    literals:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=INFO
+      - METRICS_ENABLED=true
+      - TRACING_ENABLED=true
+      - PROFILE=dev,k8s
+
+secretGenerator:
+  - name: user-service-secrets
+    literals:
+      - JWT_SECRET=dev-jwt-secret-change-in-production
+      - API_KEY=dev-api-key-change-in-production
+    type: Opaque
+
+# Resource name prefix
+namePrefix: ""
+
+# Resource name suffix
+nameSuffix: ""
+
+# Patches for environment-specific customizations
+patches:
+  # Development-specific resource limits
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+    target:
+      kind: Deployment
+      name: user-service
+
+  # Development-specific replica count
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: user-service
+
+  # Enable debug logging in development
+  - patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: LOGGING_LEVEL_COM_ECOTRACK
+          value: DEBUG
+    target:
+      kind: Deployment
+      name: user-service
+
+# Replacement variables (used by ArgoCD/Kustomize)
+replacements:
+  - source:
+      kind: ConfigMap
+      name: user-service-env-config
+      fieldPath: data.ENVIRONMENT
+    targets:
+      - select:
+          kind: Deployment
+          name: user-service
+        fieldPaths:
+          - spec.template.metadata.labels.environment
+
+# Resource validation and transformation
+transformers:
+  # Add resource quotas
+  - |-
+    apiVersion: builtin
+    kind: LabelTransformer
+    metadata:
+      name: add-environment-labels
+    labels:
+      environment: development
+      tier: microservice
+    fieldSpecs:
+      - path: metadata/labels
+        create: true
+
+# Build metadata
+buildMetadata:
+  - name: user-service-build-info
+    literals:
+      - BUILD_DATE=${BUILD_DATE}
+      - GIT_COMMIT=${GIT_COMMIT}
+      - GIT_BRANCH=${GIT_BRANCH}
+      - IMAGE_TAG=${IMAGE_TAG}
+      - PIPELINE_RUN=${PIPELINE_RUN}

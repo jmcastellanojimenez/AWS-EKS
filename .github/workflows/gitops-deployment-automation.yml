@@ -170,21 +170,76 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: terraform validate
 
-      - name: 📊 Terraform Plan
+      - name: 📊 Terraform Plan (Helm Charts First)
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           if [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
             terraform plan -destroy -out=tfplan -target=module.gitops
           else
-            terraform plan -out=tfplan -target=module.gitops
+            echo "🔄 Planning Helm charts installation first..."
+            terraform plan -out=tfplan-helm \
+              -target=module.gitops.kubernetes_namespace.gitops \
+              -target=module.gitops.helm_release.argocd \
+              -target=module.gitops.helm_release.tekton_pipelines \
+              -target=module.gitops.helm_release.tekton_triggers
           fi
 
-      - name: 🚀 Terraform Apply
+      - name: 📊 Terraform Plan (Full GitOps)
+        if: needs.validate-inputs.outputs.action != 'destroy'
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
+        run: |
+          echo "🔄 Planning full GitOps deployment..."
+          terraform plan -out=tfplan-full -target=module.gitops
+
+      - name: 🚀 Terraform Apply (Staged Deployment)
         if: needs.validate-inputs.outputs.action == 'apply'
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           if [[ "${{ inputs.auto_approve }}" == "true" ]]; then
-            terraform apply tfplan
+            echo "🚀 Stage 1: Deploying Helm charts to install CRDs..."
+            terraform apply -auto-approve tfplan-helm
+            
+            echo "⏳ Waiting for CRDs to be established..."
+            # Configure kubectl first
+            cluster_name=$(terraform output -raw cluster_name)
+            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
+            
+            # Wait for ArgoCD CRDs
+            echo "🔄 Waiting for ArgoCD CRDs..."
+            timeout 300 bash -c '
+              while ! kubectl get crd applications.argoproj.io >/dev/null 2>&1; do
+                echo "Waiting for ArgoCD Application CRD..."
+                sleep 10
+              done
+              while ! kubectl get crd applicationsets.argoproj.io >/dev/null 2>&1; do
+                echo "Waiting for ArgoCD ApplicationSet CRD..."
+                sleep 10
+              done
+            '
+            
+            # Wait for Tekton CRDs
+            echo "🏗️ Waiting for Tekton CRDs..."
+            timeout 300 bash -c '
+              while ! kubectl get crd pipelines.tekton.dev >/dev/null 2>&1; do
+                echo "Waiting for Tekton Pipeline CRD..."
+                sleep 10
+              done
+              while ! kubectl get crd tasks.tekton.dev >/dev/null 2>&1; do
+                echo "Waiting for Tekton Task CRD..."
+                sleep 10
+              done
+              while ! kubectl get crd eventlisteners.triggers.tekton.dev >/dev/null 2>&1; do
+                echo "Waiting for Tekton EventListener CRD..."
+                sleep 10
+              done
+            '
+            
+            echo "✅ All CRDs are now available!"
+            
+            echo "🚀 Stage 2: Deploying full GitOps stack..."
+            terraform apply -auto-approve tfplan-full
+            
+            echo "✅ GitOps deployment completed successfully!"
           else
             echo "❌ Manual approval required. Set auto_approve=true to proceed."
             exit 1
@@ -219,33 +274,51 @@ jobs:
         run: |
           cluster_name=$(cd terraform/environments/${{ needs.validate-inputs.outputs.environment }} && terraform output -raw cluster_name)
           if [[ -n "$cluster_name" ]]; then
-            aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
-            
+            # kubectl already configured in the apply step
             echo "🔍 Verifying GitOps & Deployment Automation Stack..."
             
             # Wait a bit for pods to start
             sleep 30
             
-            # Check ArgoCD namespace
-            echo "🔄 Checking ArgoCD..."
-            kubectl get namespace argocd
-            kubectl get pods -n argocd
-            kubectl get svc -n argocd
+            # Check GitOps namespace
+            echo "🔄 Checking GitOps namespace..."
+            kubectl get namespace gitops
+            kubectl get pods -n gitops
+            kubectl get svc -n gitops
             
-            # Check Tekton namespace
-            echo "🏗️ Checking Tekton..."
-            kubectl get namespace tekton-pipelines || echo "Tekton not enabled or not ready yet"
-            kubectl get pods -n tekton-pipelines || echo "Tekton pods not ready yet"
+            # Check ArgoCD components
+            echo "🔄 Checking ArgoCD components..."
+            kubectl get deployments -n gitops -l app.kubernetes.io/part-of=argocd
+            kubectl get pods -n gitops -l app.kubernetes.io/part-of=argocd
+            
+            # Check Tekton components
+            echo "🏗️ Checking Tekton components..."
+            kubectl get deployments -n gitops -l app.kubernetes.io/part-of=tekton-pipelines
+            kubectl get pods -n gitops -l app.kubernetes.io/part-of=tekton-pipelines
+            
+            # Check CRDs are available
+            echo "📋 Checking CRDs..."
+            kubectl get crd | grep -E "(argoproj|tekton)" | head -5
             
             # Check GitOps service accounts
             echo "🔐 Checking GitOps service accounts..."
-            kubectl get serviceaccounts -n argocd
+            kubectl get serviceaccounts -n gitops
+            
+            # Check ArgoCD Applications (may be empty initially)
+            echo "📦 Checking ArgoCD Applications..."
+            kubectl get applications -n gitops || echo "No applications found yet (this is normal for initial deployment)"
+            
+            # Check Tekton resources
+            echo "🔧 Checking Tekton resources..."
+            kubectl get pipelines -n gitops || echo "No pipelines found yet"
+            kubectl get tasks -n gitops || echo "No tasks found yet"
             
             # Get ArgoCD admin password
             echo "🔑 Getting ArgoCD admin password..."
-            kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d || echo "ArgoCD password not ready yet"
+            kubectl get secret -n gitops argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d || echo "ArgoCD password not ready yet"
             
             echo "✅ GitOps stack verification completed!"
+            echo "🎉 GitOps & Deployment Automation is ready for use!"
           fi
 
   summary:
@@ -287,9 +360,9 @@ jobs:
               echo "- **Total**: ~700m CPU, ~1.5Gi memory" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**Access Instructions:**" >> $GITHUB_STEP_SUMMARY
-              echo "1. Get ArgoCD admin password: \\`kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d\\`" >> $GITHUB_STEP_SUMMARY
-              echo "2. Port-forward to ArgoCD: \\`kubectl port-forward -n argocd svc/argocd-server 8080:443\\`" >> $GITHUB_STEP_SUMMARY
-              echo "3. Access ArgoCD: https://localhost:8080 (admin/\\<password\\>)" >> $GITHUB_STEP_SUMMARY
+              echo "1. Get ArgoCD admin password: \\`kubectl get secret -n gitops argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d\\`" >> $GITHUB_STEP_SUMMARY
+              echo "2. Port-forward to ArgoCD: \\`kubectl port-forward -n gitops svc/argocd-server 8080:80\\`" >> $GITHUB_STEP_SUMMARY
+              echo "3. Access ArgoCD: http://localhost:8080 (admin/\\<password\\>)" >> $GITHUB_STEP_SUMMARY
               echo "4. Configure Git repositories for EcoTrack microservices" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**GitOps Workflow:**" >> $GITHUB_STEP_SUMMARY

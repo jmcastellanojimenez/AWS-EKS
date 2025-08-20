@@ -1,0 +1,362 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: update-manifests
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/categories: GitOps
+    tekton.dev/tags: gitops, argocd, kustomize, helm
+    tekton.dev/displayName: "Update GitOps Manifests"
+    tekton.dev/platforms: "linux/amd64,linux/arm64"
+spec:
+  description: >-
+    This task updates GitOps manifest repositories with new container image references.
+    It supports both Kustomize and Helm-based GitOps workflows and can create pull requests
+    for review-based deployments.
+  
+  params:
+    - name: MANIFEST_REPO_URL
+      description: Git repository URL for manifests
+      type: string
+    - name: MANIFEST_REPO_BRANCH
+      description: Branch to update in manifest repository
+      type: string
+      default: "main"
+    - name: IMAGE_URL
+      description: New container image URL to update
+      type: string
+    - name: SERVICE_NAME
+      description: Name of the microservice
+      type: string
+    - name: ENVIRONMENT
+      description: Target environment (dev, staging, prod)
+      type: string
+      default: "dev"
+    - name: MANIFEST_TYPE
+      description: Type of manifest (kustomize, helm, yaml)
+      type: string
+      default: "kustomize"
+    - name: MANIFEST_PATH
+      description: Path to manifests in repository
+      type: string
+      default: "."
+    - name: CREATE_PR
+      description: Whether to create a pull request instead of direct push
+      type: string
+      default: "false"
+    - name: PR_TITLE
+      description: Pull request title template
+      type: string
+      default: "Update {{.SERVICE_NAME}} to {{.IMAGE_TAG}}"
+    - name: PR_BODY
+      description: Pull request body template
+      type: string
+      default: |
+        Automated update of {{.SERVICE_NAME}} container image.
+        
+        **Changes:**
+        - Image: {{.IMAGE_URL}}
+        - Environment: {{.ENVIRONMENT}}
+        - Build: {{.BUILD_ID}}
+    - name: GIT_USER_NAME
+      description: Git user name for commits
+      type: string
+      default: "Tekton Pipeline"
+    - name: GIT_USER_EMAIL
+      description: Git user email for commits
+      type: string
+      default: "tekton@example.com"
+    - name: COMMIT_MESSAGE
+      description: Git commit message template
+      type: string
+      default: "chore: update {{.SERVICE_NAME}} image in {{.ENVIRONMENT}}"
+
+  workspaces:
+    - name: source
+      description: Workspace for manifest repository
+    - name: git-credentials
+      description: Git credentials for authentication
+      optional: true
+
+  results:
+    - name: COMMIT_SHA
+      description: SHA of the commit that updated manifests
+    - name: PR_NUMBER
+      description: Pull request number (if created)
+    - name: UPDATED_FILES
+      description: List of files that were updated
+
+  steps:
+    - name: clone-manifest-repo
+      image: gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init:v0.40.2
+      env:
+        - name: GIT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: github-token-secret
+              key: username
+              optional: true
+        - name: GIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: github-token-secret
+              key: token
+              optional: true
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Cloning manifest repository..."
+        echo "Repository: $(params.MANIFEST_REPO_URL)"
+        echo "Branch: $(params.MANIFEST_REPO_BRANCH)"
+        
+        cd $(workspaces.source.path)
+        
+        # Setup git credentials if available
+        if [ -n "${GIT_USERNAME}" ] && [ -n "${GIT_PASSWORD}" ]; then
+          # Extract repo info for credential setup
+          REPO_HOST=$(echo "$(params.MANIFEST_REPO_URL)" | sed -E 's#https://([^/]+)/.*#\1#')
+          echo "https://${GIT_USERNAME}:${GIT_PASSWORD}@${REPO_HOST}" > ~/.git-credentials
+          git config --global credential.helper store
+        fi
+        
+        # Configure git
+        git config --global user.name "$(params.GIT_USER_NAME)"
+        git config --global user.email "$(params.GIT_USER_EMAIL)"
+        git config --global --add safe.directory $(workspaces.source.path)
+        
+        # Clone repository
+        git clone --branch $(params.MANIFEST_REPO_BRANCH) --depth 1 \
+          $(params.MANIFEST_REPO_URL) manifest-repo
+        
+        cd manifest-repo
+        echo "Repository cloned successfully"
+        ls -la
+
+    - name: update-kustomize-manifests
+      image: k8s.gcr.io/kustomize/kustomize:v5.0.1
+      workingDir: $(workspaces.source.path)/manifest-repo
+      when:
+        - input: "$(params.MANIFEST_TYPE)"
+          operator: in
+          values: ["kustomize"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Updating Kustomize manifests..."
+        echo "Service: $(params.SERVICE_NAME)"
+        echo "Environment: $(params.ENVIRONMENT)"
+        echo "New Image: $(params.IMAGE_URL)"
+        
+        # Navigate to the correct path
+        MANIFEST_DIR="$(params.MANIFEST_PATH)/$(params.ENVIRONMENT)/$(params.SERVICE_NAME)"
+        if [ ! -d "${MANIFEST_DIR}" ]; then
+          MANIFEST_DIR="$(params.MANIFEST_PATH)/$(params.SERVICE_NAME)/$(params.ENVIRONMENT)"
+        fi
+        if [ ! -d "${MANIFEST_DIR}" ]; then
+          MANIFEST_DIR="$(params.MANIFEST_PATH)"
+        fi
+        
+        echo "Looking for manifests in: ${MANIFEST_DIR}"
+        
+        if [ -d "${MANIFEST_DIR}" ]; then
+          cd "${MANIFEST_DIR}"
+          
+          # Check if kustomization file exists
+          if [ -f "kustomization.yaml" ] || [ -f "kustomization.yml" ]; then
+            echo "Found kustomization file"
+            
+            # Update image using kustomize edit
+            kustomize edit set image $(params.SERVICE_NAME)=$(params.IMAGE_URL)
+            
+            echo "Updated kustomization.yaml with new image"
+            cat kustomization.yaml
+            
+            # Record updated files
+            echo "${MANIFEST_DIR}/kustomization.yaml" | tee $(results.UPDATED_FILES.path)
+          else
+            echo "No kustomization file found, looking for direct YAML files..."
+            # Fallback to direct YAML editing
+            find . -name "*.yaml" -o -name "*.yml" | xargs grep -l "image:" | while read file; do
+              echo "Updating image in: $file"
+              sed -i "s|image: .*$(params.SERVICE_NAME).*|image: $(params.IMAGE_URL)|g" "$file"
+              echo "$file" >> /tmp/updated-files.txt
+            done
+            
+            if [ -f /tmp/updated-files.txt ]; then
+              cat /tmp/updated-files.txt | tee $(results.UPDATED_FILES.path)
+            fi
+          fi
+        else
+          echo "Manifest directory not found: ${MANIFEST_DIR}"
+          exit 1
+        fi
+
+    - name: update-helm-manifests
+      image: alpine/helm:3.12.3
+      workingDir: $(workspaces.source.path)/manifest-repo
+      when:
+        - input: "$(params.MANIFEST_TYPE)"
+          operator: in
+          values: ["helm"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Updating Helm values..."
+        echo "Service: $(params.SERVICE_NAME)"
+        echo "Environment: $(params.ENVIRONMENT)"
+        echo "New Image: $(params.IMAGE_URL)"
+        
+        # Navigate to the correct path
+        VALUES_DIR="$(params.MANIFEST_PATH)/$(params.ENVIRONMENT)"
+        if [ ! -d "${VALUES_DIR}" ]; then
+          VALUES_DIR="$(params.MANIFEST_PATH)"
+        fi
+        
+        VALUES_FILE="${VALUES_DIR}/$(params.SERVICE_NAME)-values.yaml"
+        if [ ! -f "${VALUES_FILE}" ]; then
+          VALUES_FILE="${VALUES_DIR}/values-$(params.ENVIRONMENT).yaml"
+        fi
+        if [ ! -f "${VALUES_FILE}" ]; then
+          VALUES_FILE="${VALUES_DIR}/values.yaml"
+        fi
+        
+        echo "Updating values file: ${VALUES_FILE}"
+        
+        if [ -f "${VALUES_FILE}" ]; then
+          # Extract image name and tag
+          IMAGE_NAME=$(echo "$(params.IMAGE_URL)" | cut -d: -f1)
+          IMAGE_TAG=$(echo "$(params.IMAGE_URL)" | cut -d: -f2)
+          
+          # Update image repository and tag
+          sed -i "s|repository: .*|repository: ${IMAGE_NAME}|g" "${VALUES_FILE}"
+          sed -i "s|tag: .*|tag: ${IMAGE_TAG}|g" "${VALUES_FILE}"
+          
+          echo "Updated Helm values:"
+          cat "${VALUES_FILE}"
+          
+          echo "${VALUES_FILE}" | tee $(results.UPDATED_FILES.path)
+        else
+          echo "Values file not found: ${VALUES_FILE}"
+          exit 1
+        fi
+
+    - name: update-yaml-manifests
+      image: mikefarah/yq:4.35.2
+      workingDir: $(workspaces.source.path)/manifest-repo
+      when:
+        - input: "$(params.MANIFEST_TYPE)"
+          operator: in
+          values: ["yaml"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Updating YAML manifests..."
+        echo "Service: $(params.SERVICE_NAME)"
+        echo "Environment: $(params.ENVIRONMENT)"
+        echo "New Image: $(params.IMAGE_URL)"
+        
+        # Navigate to the correct path
+        MANIFEST_DIR="$(params.MANIFEST_PATH)/$(params.ENVIRONMENT)"
+        if [ ! -d "${MANIFEST_DIR}" ]; then
+          MANIFEST_DIR="$(params.MANIFEST_PATH)"
+        fi
+        
+        echo "Looking for YAML files in: ${MANIFEST_DIR}"
+        
+        cd "${MANIFEST_DIR}"
+        
+        # Find and update deployment files
+        find . -name "*.yaml" -o -name "*.yml" | while read file; do
+          # Check if file contains deployment/container specs
+          if yq eval '.kind == "Deployment" or .kind == "StatefulSet" or .kind == "DaemonSet"' "$file" | grep -q "true"; then
+            echo "Updating image in deployment file: $file"
+            
+            # Update container image
+            yq eval '.spec.template.spec.containers[].image |= select(. == "*$(params.SERVICE_NAME)*") = "$(params.IMAGE_URL)"' -i "$file"
+            
+            echo "$file" >> /tmp/updated-files.txt
+          fi
+        done
+        
+        if [ -f /tmp/updated-files.txt ]; then
+          cat /tmp/updated-files.txt | tee $(results.UPDATED_FILES.path)
+          echo "Updated files:"
+          cat /tmp/updated-files.txt
+        else
+          echo "No deployment files found to update"
+        fi
+
+    - name: commit-and-push
+      image: alpine/git:2.40.1
+      workingDir: $(workspaces.source.path)/manifest-repo
+      env:
+        - name: GIT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: github-token-secret
+              key: username
+              optional: true
+        - name: GIT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: github-token-secret
+              key: token
+              optional: true
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Committing and pushing changes..."
+        
+        # Setup git credentials if available
+        if [ -n "${GIT_USERNAME}" ] && [ -n "${GIT_PASSWORD}" ]; then
+          REPO_HOST=$(echo "$(params.MANIFEST_REPO_URL)" | sed -E 's#https://([^/]+)/.*#\1#')
+          echo "https://${GIT_USERNAME}:${GIT_PASSWORD}@${REPO_HOST}" > ~/.git-credentials
+          git config --global credential.helper store
+        fi
+        
+        # Configure git
+        git config --global user.name "$(params.GIT_USER_NAME)"
+        git config --global user.email "$(params.GIT_USER_EMAIL)"
+        git config --global --add safe.directory $(pwd)
+        
+        # Check if there are changes
+        if git diff --quiet; then
+          echo "No changes detected"
+          exit 0
+        fi
+        
+        # Prepare commit message
+        COMMIT_MSG=$(echo "$(params.COMMIT_MESSAGE)" | sed "s/{{.SERVICE_NAME}}/$(params.SERVICE_NAME)/g" | sed "s/{{.ENVIRONMENT}}/$(params.ENVIRONMENT)/g")
+        
+        echo "Changes detected:"
+        git diff --name-only
+        
+        # Add and commit changes
+        git add .
+        git commit -m "${COMMIT_MSG}"
+        
+        # Get commit SHA
+        COMMIT_SHA=$(git rev-parse HEAD)
+        echo -n "${COMMIT_SHA}" | tee $(results.COMMIT_SHA.path)
+        
+        # Push changes
+        if [ "$(params.CREATE_PR)" = "true" ]; then
+          # Create a new branch for PR
+          BRANCH_NAME="update-$(params.SERVICE_NAME)-$(date +%s)"
+          git checkout -b "${BRANCH_NAME}"
+          git push origin "${BRANCH_NAME}"
+          echo "Pushed to branch: ${BRANCH_NAME}"
+        else
+          git push origin $(params.MANIFEST_REPO_BRANCH)
+          echo "Pushed to branch: $(params.MANIFEST_REPO_BRANCH)"
+        fi
+        
+        echo "Manifest update completed successfully"

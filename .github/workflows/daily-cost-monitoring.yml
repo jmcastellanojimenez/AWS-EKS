@@ -1,0 +1,473 @@
+name: 💰 Daily AWS Cost Monitoring
+
+on:
+  schedule:
+    # Run daily at 8:00 AM CET (7:00 AM UTC in winter, 6:00 AM UTC in summer)
+    # Using 7:00 AM UTC as a compromise
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Number of days back to analyze'
+        required: false
+        default: '7'
+        type: string
+      include_zero_cost:
+        description: 'Include resources with zero cost'
+        required: false
+        default: false
+        type: boolean
+      send_slack_report:
+        description: 'Send report to Slack'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  cost-monitoring:
+    name: 💰 Monitor AWS Costs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: daily-cost-monitoring
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: false
+
+      - name: 🏷️ Get AWS Account Info
+        id: account-info
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ACCOUNT_ALIAS=$(aws iam list-account-aliases --query 'AccountAliases[0]' --output text 2>/dev/null || echo "N/A")
+          echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+          echo "account_alias=$ACCOUNT_ALIAS" >> $GITHUB_OUTPUT
+          echo "📋 AWS Account ID: $ACCOUNT_ID"
+          echo "🏷️ Account Alias: $ACCOUNT_ALIAS"
+
+      - name: 📊 Generate Cost Report
+        id: cost-report
+        run: |
+          DAYS_BACK="${{ github.event.inputs.days_back || '7' }}"
+          INCLUDE_ZERO="${{ github.event.inputs.include_zero_cost || 'false' }}"
+          
+          # Calculate date range
+          START_DATE=$(date -d "${DAYS_BACK} days ago" '+%Y-%m-%d')
+          END_DATE=$(date '+%Y-%m-%d')
+          
+          echo "📅 Analyzing costs from $START_DATE to $END_DATE"
+          
+          # Create cost report directory
+          mkdir -p cost-reports
+          
+          # Generate comprehensive cost report
+          cat > cost-analysis.py << 'EOF'
+          import json
+          import boto3
+          import sys
+          from datetime import datetime, timedelta
+          from decimal import Decimal
+          
+          def decimal_default(obj):
+              if isinstance(obj, Decimal):
+                  return float(obj)
+              raise TypeError
+          
+          def get_cost_and_usage(client, start_date, end_date):
+              try:
+                  response = client.get_cost_and_usage(
+                      TimePeriod={
+                          'Start': start_date,
+                          'End': end_date
+                      },
+                      Granularity='DAILY',
+                      Metrics=['BlendedCost', 'UnblendedCost', 'UsageQuantity'],
+                      GroupBy=[
+                          {'Type': 'DIMENSION', 'Key': 'SERVICE'},
+                          {'Type': 'DIMENSION', 'Key': 'USAGE_TYPE'}
+                      ]
+                  )
+                  return response
+              except Exception as e:
+                  print(f"Error getting cost data: {e}")
+                  return None
+          
+          def get_resources_by_service(session):
+              resources = []
+              
+              # EC2 Instances
+              try:
+                  ec2 = session.client('ec2')
+                  instances = ec2.describe_instances()
+                  for reservation in instances['Reservations']:
+                      for instance in reservation['Instances']:
+                          name = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Name'), 'N/A')
+                          resources.append({
+                              'ResourceId': instance['InstanceId'],
+                              'ResourceType': 'EC2 Instance',
+                              'ResourceName': name,
+                              'State': instance['State']['Name'],
+                              'InstanceType': instance['InstanceType'],
+                              'LaunchTime': instance.get('LaunchTime', '').isoformat() if instance.get('LaunchTime') else 'N/A'
+                          })
+              except Exception as e:
+                  print(f"Error listing EC2 instances: {e}")
+          
+              # EKS Clusters
+              try:
+                  eks = session.client('eks')
+                  clusters = eks.list_clusters()
+                  for cluster_name in clusters['clusters']:
+                      cluster = eks.describe_cluster(name=cluster_name)['cluster']
+                      resources.append({
+                          'ResourceId': cluster_name,
+                          'ResourceType': 'EKS Cluster',
+                          'ResourceName': cluster_name,
+                          'State': cluster['status'],
+                          'Version': cluster['version'],
+                          'CreatedAt': cluster['createdAt'].isoformat()
+                      })
+              except Exception as e:
+                  print(f"Error listing EKS clusters: {e}")
+          
+              # RDS Instances
+              try:
+                  rds = session.client('rds')
+                  instances = rds.describe_db_instances()
+                  for db in instances['DBInstances']:
+                      resources.append({
+                          'ResourceId': db['DBInstanceIdentifier'],
+                          'ResourceType': 'RDS Instance',
+                          'ResourceName': db['DBInstanceIdentifier'],
+                          'State': db['DBInstanceStatus'],
+                          'Engine': db['Engine'],
+                          'InstanceClass': db['DBInstanceClass']
+                      })
+              except Exception as e:
+                  print(f"Error listing RDS instances: {e}")
+          
+              # S3 Buckets
+              try:
+                  s3 = session.client('s3')
+                  buckets = s3.list_buckets()
+                  for bucket in buckets['Buckets']:
+                      resources.append({
+                          'ResourceId': bucket['Name'],
+                          'ResourceType': 'S3 Bucket',
+                          'ResourceName': bucket['Name'],
+                          'State': 'Active',
+                          'CreationDate': bucket['CreationDate'].isoformat()
+                      })
+              except Exception as e:
+                  print(f"Error listing S3 buckets: {e}")
+          
+              # Application Load Balancers
+              try:
+                  elbv2 = session.client('elbv2')
+                  load_balancers = elbv2.describe_load_balancers()
+                  for lb in load_balancers['LoadBalancers']:
+                      name = next((tag['Value'] for tag in elbv2.describe_tags(ResourceArns=[lb['LoadBalancerArn']])['TagDescriptions'][0]['Tags'] if tag['Key'] == 'Name'), lb['LoadBalancerName'])
+                      resources.append({
+                          'ResourceId': lb['LoadBalancerName'],
+                          'ResourceType': f"{lb['Type'].upper()} Load Balancer",
+                          'ResourceName': name,
+                          'State': lb['State']['Code'],
+                          'Scheme': lb['Scheme'],
+                          'CreatedTime': lb['CreatedTime'].isoformat()
+                      })
+              except Exception as e:
+                  print(f"Error listing Load Balancers: {e}")
+          
+              return resources
+          
+          def main():
+              start_date = sys.argv[1]
+              end_date = sys.argv[2] 
+              include_zero = sys.argv[3].lower() == 'true'
+              
+              session = boto3.Session()
+              cost_client = session.client('ce', region_name='us-east-1')  # Cost Explorer is only in us-east-1
+              
+              print(f"🔍 Analyzing costs from {start_date} to {end_date}")
+              
+              # Get cost data
+              cost_data = get_cost_and_usage(cost_client, start_date, end_date)
+              
+              # Get resource inventory
+              resources = get_resources_by_service(session)
+              
+              # Process and combine data
+              report = {
+                  'report_date': datetime.now().isoformat(),
+                  'period': {'start': start_date, 'end': end_date},
+                  'account_info': {
+                      'account_id': session.client('sts').get_caller_identity()['Account']
+                  },
+                  'resources': resources,
+                  'cost_summary': {},
+                  'daily_costs': []
+              }
+              
+              if cost_data and 'ResultsByTime' in cost_data:
+                  total_cost = 0
+                  service_costs = {}
+                  
+                  for result in cost_data['ResultsByTime']:
+                      day_cost = 0
+                      daily_breakdown = {
+                          'date': result['TimePeriod']['Start'],
+                          'services': []
+                      }
+                      
+                      for group in result['Groups']:
+                          service = group['Keys'][0]
+                          usage_type = group['Keys'][1] 
+                          cost = float(group['Metrics']['BlendedCost']['Amount'])
+                          usage = float(group['Metrics']['UsageQuantity']['Amount'])
+                          
+                          if cost > 0 or include_zero:
+                              day_cost += cost
+                              daily_breakdown['services'].append({
+                                  'service': service,
+                                  'usage_type': usage_type,
+                                  'cost': round(cost, 4),
+                                  'usage': round(usage, 2)
+                              })
+                              
+                              if service not in service_costs:
+                                  service_costs[service] = 0
+                              service_costs[service] += cost
+                      
+                      daily_breakdown['total_cost'] = round(day_cost, 2)
+                      report['daily_costs'].append(daily_breakdown)
+                      total_cost += day_cost
+                  
+                  report['cost_summary'] = {
+                      'total_cost': round(total_cost, 2),
+                      'average_daily_cost': round(total_cost / len(cost_data['ResultsByTime']), 2),
+                      'services': {k: round(v, 2) for k, v in sorted(service_costs.items(), key=lambda x: x[1], reverse=True)}
+                  }
+              
+              # Output the report
+              print("📊 COST ANALYSIS REPORT")
+              print("=" * 50)
+              print(json.dumps(report, indent=2, default=decimal_default))
+              
+              # Save to file
+              with open('cost-reports/daily-cost-report.json', 'w') as f:
+                  json.dump(report, f, indent=2, default=decimal_default)
+              
+              # Generate summary
+              total_resources = len(report['resources'])
+              total_cost = report['cost_summary'].get('total_cost', 0)
+              avg_daily = report['cost_summary'].get('average_daily_cost', 0)
+              
+              print(f"\n📋 SUMMARY")
+              print(f"Total Resources: {total_resources}")
+              print(f"Total Cost (${len(report['daily_costs'])} days): ${total_cost}")
+              print(f"Average Daily Cost: ${avg_daily}")
+              
+              # Set GitHub outputs
+              with open('cost-reports/summary.txt', 'w') as f:
+                  f.write(f"total_resources={total_resources}\n")
+                  f.write(f"total_cost={total_cost}\n") 
+                  f.write(f"avg_daily_cost={avg_daily}\n")
+                  f.write(f"top_service={list(report['cost_summary']['services'].keys())[0] if report['cost_summary']['services'] else 'N/A'}\n")
+                  f.write(f"top_service_cost={list(report['cost_summary']['services'].values())[0] if report['cost_summary']['services'] else 0}\n")
+          
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+          # Run the analysis
+          python3 cost-analysis.py "$START_DATE" "$END_DATE" "$INCLUDE_ZERO"
+          
+          # Set outputs from summary file
+          while IFS='=' read -r key value; do
+            echo "$key=$value" >> $GITHUB_OUTPUT
+          done < cost-reports/summary.txt
+
+      - name: 📄 Generate Human-Readable Report
+        run: |
+          # Create markdown report
+          cat > cost-reports/daily-report.md << EOF
+          # 💰 Daily AWS Cost Report
+          
+          **Report Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')  
+          **Account:** ${{ steps.account-info.outputs.account_id }} (${{ steps.account-info.outputs.account_alias }})  
+          **Period:** Last ${{ github.event.inputs.days_back || '7' }} days  
+          
+          ## 📊 Cost Summary
+          
+          - **Total Resources:** ${{ steps.cost-report.outputs.total_resources }}
+          - **Total Cost:** \$${{ steps.cost-report.outputs.total_cost }}
+          - **Average Daily Cost:** \$${{ steps.cost-report.outputs.avg_daily_cost }}
+          - **Top Service:** ${{ steps.cost-report.outputs.top_service }} (\$${{ steps.cost-report.outputs.top_service_cost }})
+          
+          ## 📋 Detailed Analysis
+          
+          For detailed breakdown, see the attached JSON report.
+          
+          ## 💡 Cost Optimization Recommendations
+          
+          $(python3 -c "
+          import json
+          with open('cost-reports/daily-cost-report.json', 'r') as f:
+              data = json.load(f)
+          
+          print('### Resource Recommendations')
+          
+          # Check for stopped instances
+          stopped_instances = [r for r in data['resources'] if r['ResourceType'] == 'EC2 Instance' and r['State'] == 'stopped']
+          if stopped_instances:
+              print(f'- 🛑 **{len(stopped_instances)} stopped EC2 instances** - Consider terminating if no longer needed')
+          
+          # Check for expensive services
+          if data['cost_summary']['services']:
+              top_services = list(data['cost_summary']['services'].items())[:3]
+              print('- 💸 **Top 3 cost services:**')
+              for service, cost in top_services:
+                  print(f'  - {service}: \${cost:.2f}')
+          
+          # General recommendations
+          if data['cost_summary']['total_cost'] > 100:
+              print('- ⚠️ **High costs detected** - Review resource utilization')
+          elif data['cost_summary']['total_cost'] < 10:
+              print('- ✅ **Low costs** - Good cost management!')
+          ")
+          
+          ---
+          *Generated by GitHub Actions on $(date)*
+          EOF
+
+      - name: 📤 Upload Cost Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-cost-report-$(date +%Y%m%d)
+          path: cost-reports/
+          retention-days: 30
+
+      - name: 📊 Display Report Summary
+        run: |
+          echo "## 💰 AWS Cost Report Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Account:** ${{ steps.account-info.outputs.account_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Resources | ${{ steps.cost-report.outputs.total_resources }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Cost | \$${{ steps.cost-report.outputs.total_cost }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Avg Daily Cost | \$${{ steps.cost-report.outputs.avg_daily_cost }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Top Service | ${{ steps.cost-report.outputs.top_service }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Display markdown report content
+          cat cost-reports/daily-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: 💬 Send Slack Notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL && (github.event.inputs.send_slack_report != 'false') }}
+        run: |
+          # Prepare Slack message
+          COST_EMOJI="💚"
+          TOTAL_COST="${{ steps.cost-report.outputs.total_cost }}"
+          
+          # Use Python for cost threshold checks
+          if python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > 100 else 1)"; then
+            COST_EMOJI="🔴"
+          elif python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > 50 else 1)"; then
+            COST_EMOJI="🟡"
+          fi
+          
+          cat > slack-payload.json << EOF
+          {
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "💰 Daily AWS Cost Report"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Account:* ${{ steps.account-info.outputs.account_id }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Date:* $(date '+%Y-%m-%d')"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Resources:* ${{ steps.cost-report.outputs.total_resources }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Total Cost:* $COST_EMOJI \$${{ steps.cost-report.outputs.total_cost }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Daily Avg:* \$${{ steps.cost-report.outputs.avg_daily_cost }}"
+                  },
+                  {
+                    "type": "mrkdwn",
+                    "text": "*Top Service:* ${{ steps.cost-report.outputs.top_service }}"
+                  }
+                ]
+              },
+              {
+                "type": "context",
+                "elements": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "📊 Detailed report available in GitHub Actions artifacts"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          
+          # Send to Slack
+          curl -X POST -H 'Content-type: application/json' \
+            --data @slack-payload.json \
+            "${{ secrets.SLACK_WEBHOOK_URL }}" || echo "Failed to send Slack notification"
+
+      - name: ⚠️ Cost Alert Check
+        run: |
+          TOTAL_COST="${{ steps.cost-report.outputs.total_cost }}"
+          DAILY_AVG="${{ steps.cost-report.outputs.avg_daily_cost }}"
+          
+          # Define thresholds
+          WARNING_THRESHOLD=50
+          CRITICAL_THRESHOLD=100
+          
+          echo "💰 Cost Analysis:"
+          echo "  Total Cost: \$$TOTAL_COST"
+          echo "  Daily Average: \$$DAILY_AVG"
+          
+          # Use Python for floating point comparison instead of bc
+          if python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > $CRITICAL_THRESHOLD else 1)"; then
+            echo "🚨 CRITICAL: Total cost exceeds \$$CRITICAL_THRESHOLD!"
+            echo "::warning::High AWS costs detected - Total: \$$TOTAL_COST"
+          elif python3 -c "import sys; sys.exit(0 if float('$TOTAL_COST') > $WARNING_THRESHOLD else 1)"; then
+            echo "⚠️ WARNING: Total cost exceeds \$$WARNING_THRESHOLD"
+            echo "::notice::AWS costs above warning threshold - Total: \$$TOTAL_COST"
+          else
+            echo "✅ Costs are within normal range"
+          fi

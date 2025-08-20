@@ -1,0 +1,556 @@
+name: ⚠️ [DEPRECATED] Deploy Kubernetes Ingress Patterns
+
+on:
+  workflow_dispatch:
+    inputs:
+      _deprecated_notice:
+        description: '⚠️ DEPRECATED: Use "SA Infra - Complete Ingress Deployment" instead'
+        required: true
+        default: 'I understand this workflow is deprecated'
+        type: string
+      ingress_pattern:
+        description: 'Ingress Pattern to Deploy'
+        required: true
+        default: 'alb'
+        type: choice
+        options:
+        - alb
+        - nginx
+      deploy_demo_apps:
+        description: 'Deploy Demo Applications'
+        required: false
+        default: true
+        type: boolean
+      dry_run:
+        description: 'Dry Run Mode (plan only)'
+        required: false
+        default: false
+        type: boolean
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      domain_name:
+        description: 'Domain name for the demo'
+        required: false
+        default: 'k8s-demo.local'
+        type: string
+      hosted_zone_id:
+        description: 'Route53 hosted zone ID (leave empty to auto-create)'
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+  PATTERN: ${{ inputs.ingress_pattern }}
+  ENVIRONMENT: ${{ inputs.environment }}
+
+jobs:
+  validate-inputs:
+    name: 🔍 Validate Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      pattern: ${{ steps.validate.outputs.pattern }}
+      environment: ${{ steps.validate.outputs.environment }}
+      deploy-apps: ${{ steps.validate.outputs.deploy-apps }}
+      dry-run: ${{ steps.validate.outputs.dry-run }}
+    steps:
+      - name: Validate Inputs
+        id: validate
+        run: |
+          echo "pattern=${{ env.PATTERN }}" >> $GITHUB_OUTPUT
+          echo "environment=${{ env.ENVIRONMENT }}" >> $GITHUB_OUTPUT
+          echo "deploy-apps=${{ inputs.deploy_demo_apps }}" >> $GITHUB_OUTPUT
+          echo "dry-run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
+          
+          echo "## 🚀 Ingress Pattern Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pattern**: ${{ env.PATTERN }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deploy Apps**: ${{ inputs.deploy_demo_apps }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run**: ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
+
+  deploy-shared-infrastructure:
+    name: 🏗️ Deploy Shared Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate-inputs
+    outputs:
+      hosted-zone-id: ${{ steps.output.outputs.hosted-zone-id }}
+      domain-name: ${{ steps.output.outputs.domain-name }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-IngressShared
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init - Shared
+        working-directory: terraform/shared
+        run: |
+          terraform init \
+            -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
+            -backend-config="key=ingress-shared/terraform.tfstate"
+
+      - name: Terraform Plan - Shared
+        working-directory: terraform/shared
+        run: |
+          terraform plan -out=tfplan \
+            -var="environment=${{ needs.validate-inputs.outputs.environment }}"
+
+      - name: Terraform Apply - Shared
+        if: needs.validate-inputs.outputs.dry-run != 'true'
+        working-directory: terraform/shared
+        run: terraform apply tfplan
+
+      - name: Get Terraform Outputs
+        id: output
+        if: needs.validate-inputs.outputs.dry-run != 'true'
+        working-directory: terraform/shared
+        run: |
+          hosted_zone_id=$(terraform output -raw hosted_zone_id)
+          domain_name=$(terraform output -raw domain_name)
+          echo "hosted-zone-id=$hosted_zone_id" >> $GITHUB_OUTPUT
+          echo "domain-name=$domain_name" >> $GITHUB_OUTPUT
+
+  deploy-pattern-infrastructure:
+    name: 🎯 Deploy ${{ needs.validate-inputs.outputs.pattern }} Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, deploy-shared-infrastructure]
+    outputs:
+      lb-controller-role-arn: ${{ steps.output.outputs.lb-controller-role-arn }}
+      external-dns-role-arn: ${{ steps.output.outputs.external-dns-role-arn }}
+      cert-manager-role-arn: ${{ steps.output.outputs.cert-manager-role-arn }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-IngressPattern
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init - Pattern
+        working-directory: terraform/${{ needs.validate-inputs.outputs.pattern }}-pattern
+        run: |
+          terraform init \
+            -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
+            -backend-config="key=ingress-${{ needs.validate-inputs.outputs.pattern }}-${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
+
+      - name: Terraform Plan - Pattern
+        working-directory: terraform/${{ needs.validate-inputs.outputs.pattern }}-pattern
+        run: |
+          terraform plan -out=tfplan \
+            -var="environment=${{ needs.validate-inputs.outputs.environment }}" \
+            -var="hosted_zone_id=${{ needs.deploy-shared-infrastructure.outputs.hosted-zone-id }}" \
+            -var="domain_name=${{ needs.deploy-shared-infrastructure.outputs.domain-name }}"
+
+      - name: Import Existing IAM Roles (if any)
+        if: needs.validate-inputs.outputs.dry-run != 'true'
+        working-directory: terraform/${{ needs.validate-inputs.outputs.pattern }}-pattern
+        continue-on-error: true
+        run: |
+          echo "🔍 Checking for existing IAM roles to import..."
+          
+          if [[ "${{ needs.validate-inputs.outputs.pattern }}" == "alb" ]]; then
+            # ALB pattern roles
+            ROLES=(
+              "aws_iam_role.lb_controller:${{ needs.validate-inputs.outputs.environment }}-aws-load-balancer-controller-role"
+              "aws_iam_role.external_dns:${{ needs.validate-inputs.outputs.environment }}-alb-external-dns-role"  
+              "aws_iam_role.cert_manager:${{ needs.validate-inputs.outputs.environment }}-alb-cert-manager-role"
+            )
+          else
+            # NGINX pattern roles  
+            ROLES=(
+              "aws_iam_role.external_dns:${{ needs.validate-inputs.outputs.environment }}-nginx-external-dns-role"
+              "aws_iam_role.cert_manager:${{ needs.validate-inputs.outputs.environment }}-nginx-cert-manager-role"
+            )
+          fi
+          
+          for role_mapping in "${ROLES[@]}"; do
+            IFS=':' read -r tf_resource role_name <<< "$role_mapping"
+            echo "🔍 Checking if role exists: $role_name"
+            
+            if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
+              echo "📥 Importing existing role: $role_name -> $tf_resource"
+              terraform import "$tf_resource" "$role_name" || echo "⚠️ Import failed for $role_name (may already be in state)"
+            else
+              echo "ℹ️ Role $role_name does not exist, will be created"
+            fi
+          done
+
+      - name: Terraform Apply - Pattern
+        if: needs.validate-inputs.outputs.dry-run != 'true'
+        working-directory: terraform/${{ needs.validate-inputs.outputs.pattern }}-pattern
+        run: terraform apply tfplan
+
+      - name: Get Terraform Outputs
+        id: output
+        if: needs.validate-inputs.outputs.dry-run != 'true'
+        working-directory: terraform/${{ needs.validate-inputs.outputs.pattern }}-pattern
+        run: |
+          if [[ "${{ needs.validate-inputs.outputs.pattern }}" == "alb" ]]; then
+            lb_role=$(terraform output -raw lb_controller_role_arn 2>/dev/null || echo "")
+            echo "lb-controller-role-arn=$lb_role" >> $GITHUB_OUTPUT
+          fi
+          
+          external_dns_role=$(terraform output -raw external_dns_role_arn 2>/dev/null || echo "")
+          cert_manager_role=$(terraform output -raw cert_manager_role_arn 2>/dev/null || echo "")
+          echo "external-dns-role-arn=$external_dns_role" >> $GITHUB_OUTPUT
+          echo "cert-manager-role-arn=$cert_manager_role" >> $GITHUB_OUTPUT
+
+  deploy-kubernetes-controllers:
+    name: 🎮 Deploy Kubernetes Controllers
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, deploy-shared-infrastructure, deploy-pattern-infrastructure]
+    if: needs.validate-inputs.outputs.dry-run != 'true'
+    outputs:
+      load-balancer-hostname: ${{ steps.deploy.outputs.load-balancer-hostname }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-K8sControllers
+
+      - name: Setup kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name eks-learning-lab-${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Deploy cert-manager
+        run: |
+          # Add Jetstack repository
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+          
+          # Install cert-manager
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --create-namespace \
+            --version v1.13.3 \
+            --set installCRDs=true \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${{ needs.deploy-pattern-infrastructure.outputs.cert-manager-role-arn }}"
+
+      - name: Deploy External-DNS
+        run: |
+          # Add External-DNS repository
+          helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+          helm repo update
+          
+          # Install External-DNS
+          helm upgrade --install external-dns external-dns/external-dns \
+            --namespace external-dns \
+            --create-namespace \
+            --set provider=aws \
+            --set aws.region=${{ secrets.AWS_REGION }} \
+            --set domainFilters[0]=${{ needs.deploy-shared-infrastructure.outputs.domain-name }} \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${{ needs.deploy-pattern-infrastructure.outputs.external-dns-role-arn }}" \
+            --set txtOwnerId=${{ needs.deploy-shared-infrastructure.outputs.hosted-zone-id }}
+
+      - name: Deploy ALB Controller
+        if: needs.validate-inputs.outputs.pattern == 'alb'
+        run: |
+          # Add EKS repository
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+          
+          # Install AWS Load Balancer Controller
+          helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            --namespace kube-system \
+            --set clusterName=eks-learning-lab-${{ needs.validate-inputs.outputs.environment }} \
+            --set serviceAccount.create=false \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set region=${{ secrets.AWS_REGION }} \
+            --set vpcId=$(aws eks describe-cluster --name eks-learning-lab-${{ needs.validate-inputs.outputs.environment }} --query 'cluster.resourcesVpcConfig.vpcId' --output text)
+
+      - name: Create ALB Controller ServiceAccount
+        if: needs.validate-inputs.outputs.pattern == 'alb'
+        run: |
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            labels:
+              app.kubernetes.io/component: controller
+              app.kubernetes.io/name: aws-load-balancer-controller
+            name: aws-load-balancer-controller
+            namespace: kube-system
+            annotations:
+              eks.amazonaws.com/role-arn: ${{ needs.deploy-pattern-infrastructure.outputs.lb-controller-role-arn }}
+          EOF
+
+      - name: Deploy NGINX Controller
+        if: needs.validate-inputs.outputs.pattern == 'nginx'
+        run: |
+          # Add NGINX repository
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          
+          # Install NGINX Ingress Controller
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --set controller.service.type=LoadBalancer \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"="nlb" \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled"="true"
+
+      - name: Apply Kubernetes Manifests
+        id: deploy
+        run: |
+          # Apply cert-manager ClusterIssuer
+          kubectl apply -f k8s/cert-manager/
+
+          # Wait for controllers to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+          kubectl wait --for=condition=available --timeout=300s deployment/external-dns -n external-dns
+          
+          if [[ "${{ needs.validate-inputs.outputs.pattern }}" == "alb" ]]; then
+            kubectl wait --for=condition=available --timeout=300s deployment/aws-load-balancer-controller -n kube-system
+          else
+            kubectl wait --for=condition=available --timeout=300s deployment/ingress-nginx-controller -n ingress-nginx
+          fi
+
+          # Deploy demo applications if requested
+          if [[ "${{ needs.validate-inputs.outputs.deploy-apps }}" == "true" ]]; then
+            kubectl apply -f k8s/demo-apps/
+            kubectl apply -f k8s/${{ needs.validate-inputs.outputs.pattern }}/
+            
+            # Wait for ingress to get load balancer hostname
+            echo "Waiting for LoadBalancer hostname..."
+            for i in {1..60}; do
+              if [[ "${{ needs.validate-inputs.outputs.pattern }}" == "alb" ]]; then
+                hostname=$(kubectl get ingress demo-app-alb -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+              else
+                hostname=$(kubectl get service ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+              fi
+              
+              if [[ -n "$hostname" && "$hostname" != "null" ]]; then
+                echo "LoadBalancer hostname: $hostname"
+                echo "load-balancer-hostname=$hostname" >> $GITHUB_OUTPUT
+                break
+              fi
+              
+              echo "Attempt $i/60: Waiting for LoadBalancer hostname..."
+              sleep 10
+            done
+          fi
+
+  run-validation-tests:
+    name: 🧪 Run Validation Tests
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, deploy-shared-infrastructure, deploy-kubernetes-controllers]
+    if: needs.validate-inputs.outputs.dry-run != 'true' && needs.validate-inputs.outputs.deploy-apps == 'true'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-Validation
+
+      - name: Setup kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name eks-learning-lab-${{ needs.validate-inputs.outputs.environment }}
+
+      - name: Run End-to-End Tests
+        run: |
+          chmod +x scripts/test-ingress.sh
+          ./scripts/test-ingress.sh \
+            ${{ needs.validate-inputs.outputs.pattern }} \
+            ${{ needs.deploy-shared-infrastructure.outputs.domain-name }} \
+            ${{ needs.deploy-kubernetes-controllers.outputs.load-balancer-hostname }}
+
+  notify-slack:
+    name: 📢 Notify Slack
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, deploy-shared-infrastructure, deploy-kubernetes-controllers, run-validation-tests]
+    if: always()
+    steps:
+      - name: Send Slack Notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          status="success"
+          if [[ "${{ needs.deploy-shared-infrastructure.result }}" != "success" ]] || \
+             [[ "${{ needs.deploy-kubernetes-controllers.result }}" != "success" ]] || \
+             [[ "${{ needs.run-validation-tests.result }}" != "success" && "${{ needs.run-validation-tests.result }}" != "skipped" ]]; then
+            status="failure"
+          fi
+
+          color="good"
+          emoji="✅"
+          if [[ "$status" == "failure" ]]; then
+            color="danger"
+            emoji="❌"
+          fi
+
+          if [[ "${{ needs.validate-inputs.outputs.dry-run }}" == "true" ]]; then
+            action_text="Dry Run Completed"
+            emoji="🔍"
+            color="warning"
+          else
+            action_text="Deployment"
+          fi
+
+          payload=$(cat <<EOF
+          {
+            "attachments": [
+              {
+                "color": "$color",
+                "title": "$emoji Kubernetes Ingress $action_text",
+                "fields": [
+                  {
+                    "title": "Pattern",
+                    "value": "${{ needs.validate-inputs.outputs.pattern }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Environment", 
+                    "value": "${{ needs.validate-inputs.outputs.environment }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Demo Apps",
+                    "value": "${{ needs.validate-inputs.outputs.deploy-apps }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Status",
+                    "value": "$status",
+                    "short": true
+                  }
+                ],
+                "footer": "GitHub Actions",
+                "ts": $(date +%s)
+              }
+            ]
+          }
+          EOF
+          )
+
+          curl -X POST -H 'Content-type: application/json' \
+            --data "$payload" \
+            "$SLACK_WEBHOOK_URL"
+
+  post-deployment-summary:
+    name: 📋 Post Deployment Summary  
+    runs-on: ubuntu-latest
+    needs: [validate-inputs, deploy-shared-infrastructure, deploy-kubernetes-controllers, run-validation-tests]
+    if: always()
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "## 🚀 Kubernetes Ingress Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pattern**: ${{ needs.validate-inputs.outputs.pattern }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ needs.validate-inputs.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run**: ${{ needs.validate-inputs.outputs.dry-run }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deploy Apps**: ${{ needs.validate-inputs.outputs.deploy-apps }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.validate-inputs.outputs.dry-run }}" == "true" ]]; then
+            echo "### 🔍 Dry Run Results" >> $GITHUB_STEP_SUMMARY
+            echo "- Terraform plans generated successfully" >> $GITHUB_STEP_SUMMARY
+            echo "- No resources were deployed" >> $GITHUB_STEP_SUMMARY
+            echo "- Ready for actual deployment" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### 🎯 Deployment Results" >> $GITHUB_STEP_SUMMARY
+            
+            if [[ "${{ needs.deploy-shared-infrastructure.result }}" == "success" ]]; then
+              echo "- ✅ Shared infrastructure deployed" >> $GITHUB_STEP_SUMMARY
+              echo "- ✅ Route53 hosted zone: ${{ needs.deploy-shared-infrastructure.outputs.domain-name }}" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- ❌ Shared infrastructure failed" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if [[ "${{ needs.deploy-kubernetes-controllers.result }}" == "success" ]]; then
+              echo "- ✅ Kubernetes controllers deployed" >> $GITHUB_STEP_SUMMARY
+              if [[ "${{ needs.validate-inputs.outputs.deploy-apps }}" == "true" ]]; then
+                echo "- ✅ Demo applications deployed" >> $GITHUB_STEP_SUMMARY
+                if [[ -n "${{ needs.deploy-kubernetes-controllers.outputs.load-balancer-hostname }}" ]]; then
+                  echo "- 🌐 LoadBalancer: \`${{ needs.deploy-kubernetes-controllers.outputs.load-balancer-hostname }}\`" >> $GITHUB_STEP_SUMMARY
+                fi
+              fi
+            else
+              echo "- ❌ Kubernetes deployment failed" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if [[ "${{ needs.run-validation-tests.result }}" == "success" ]]; then
+              echo "- ✅ Validation tests passed" >> $GITHUB_STEP_SUMMARY
+            elif [[ "${{ needs.run-validation-tests.result }}" == "failure" ]]; then
+              echo "- ❌ Validation tests failed" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💰 Estimated Monthly Costs" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.validate-inputs.outputs.pattern }}" == "alb" ]]; then
+            echo "- **ALB**: ~\$16/month" >> $GITHUB_STEP_SUMMARY
+            echo "- **Route53**: ~\$0.50/month" >> $GITHUB_STEP_SUMMARY
+            echo "- **Total**: ~\$16.50/month" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **NLB**: ~\$16/month" >> $GITHUB_STEP_SUMMARY  
+            echo "- **Route53**: ~\$0.50/month" >> $GITHUB_STEP_SUMMARY
+            echo "- **Total**: ~\$16.50/month" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [AWS Console Load Balancers](https://console.aws.amazon.com/ec2/v2/home?region=${{ secrets.AWS_REGION }}#LoadBalancers:)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Route53 Console](https://console.aws.amazon.com/route53/v2/hostedzones)" >> $GITHUB_STEP_SUMMARY
+          echo "- [EKS Console](https://console.aws.amazon.com/eks/home?region=${{ secrets.AWS_REGION }}#/clusters)" >> $GITHUB_STEP_SUMMARY

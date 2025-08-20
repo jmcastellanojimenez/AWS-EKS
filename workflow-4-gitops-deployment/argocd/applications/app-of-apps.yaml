@@ -1,0 +1,441 @@
+---
+# App-of-Apps pattern for EcoTrack microservices
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-app-of-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecotrack-app-of-apps
+    app.kubernetes.io/part-of: gitops-platform
+    environment: multi
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: argocd/applications
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Health and sync info
+  info:
+    - name: 'Description'
+      value: 'Central application management for all EcoTrack microservices'
+    - name: 'Repository'
+      value: 'https://github.com/${GITHUB_ORG}/ecotrack-manifests'
+
+---
+# User Service - Development Environment
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-user-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: user-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: microservice
+    environment: development
+    service-type: backend
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/user-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  # Health checks and resource customizations
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: ""
+      kind: ConfigMap
+      name: user-service-config
+      jsonPointers:
+        - /data/application.properties
+        
+  # Application info and links
+  info:
+    - name: 'Service URL'
+      value: 'https://api-dev.${DOMAIN}/user'
+    - name: 'Swagger UI'
+      value: 'https://api-dev.${DOMAIN}/user/swagger-ui.html'
+    - name: 'Health Check'
+      value: 'https://api-dev.${DOMAIN}/user/actuator/health'
+    - name: 'Metrics'
+      value: 'https://api-dev.${DOMAIN}/user/actuator/prometheus'
+    - name: 'Logs'
+      value: 'https://grafana.${DOMAIN}/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Bnamespace%3D%5C%22ecotrack-dev%5C%22,app%3D%5C%22user-service%5C%22%7D%22%7D%5D'
+
+---
+# Tracking Service - Development Environment
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-tracking-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: tracking-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: microservice
+    environment: development
+    service-type: backend
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/tracking-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+    - name: 'Service URL'
+      value: 'https://api-dev.${DOMAIN}/tracking'
+    - name: 'Swagger UI'
+      value: 'https://api-dev.${DOMAIN}/tracking/swagger-ui.html'
+    - name: 'Health Check'
+      value: 'https://api-dev.${DOMAIN}/tracking/actuator/health'
+    - name: 'Logs'
+      value: 'https://grafana.${DOMAIN}/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Bnamespace%3D%5C%22ecotrack-dev%5C%22,app%3D%5C%22tracking-service%5C%22%7D%22%7D%5D'
+
+---
+# Analytics Service - Development Environment
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-analytics-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: analytics-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: microservice
+    environment: development
+    service-type: backend
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/analytics-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+    - name: 'Service URL'
+      value: 'https://api-dev.${DOMAIN}/analytics'
+    - name: 'Swagger UI'
+      value: 'https://api-dev.${DOMAIN}/analytics/swagger-ui.html'
+    - name: 'Health Check'
+      value: 'https://api-dev.${DOMAIN}/analytics/actuator/health'
+    - name: 'Logs'
+      value: 'https://grafana.${DOMAIN}/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Bnamespace%3D%5C%22ecotrack-dev%5C%22,app%3D%5C%22analytics-service%5C%22%7D%22%7D%5D'
+
+---
+# Notification Service - Development Environment
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-notification-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: microservice
+    environment: development
+    service-type: backend
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/notification-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+    - name: 'Service URL'
+      value: 'https://api-dev.${DOMAIN}/notifications'
+    - name: 'Swagger UI'
+      value: 'https://api-dev.${DOMAIN}/notifications/swagger-ui.html'
+    - name: 'Health Check'
+      value: 'https://api-dev.${DOMAIN}/notifications/actuator/health'
+    - name: 'Logs'
+      value: 'https://grafana.${DOMAIN}/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Bnamespace%3D%5C%22ecotrack-dev%5C%22,app%3D%5C%22notification-service%5C%22%7D%22%7D%5D'
+
+---
+# Reporting Service - Development Environment
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-reporting-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: reporting-service
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: microservice
+    environment: development
+    service-type: backend
+  annotations:
+    argocd.argoproj.io/sync-wave: "50"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/reporting-service
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+    - name: 'Service URL'
+      value: 'https://api-dev.${DOMAIN}/reports'
+    - name: 'Swagger UI'
+      value: 'https://api-dev.${DOMAIN}/reports/swagger-ui.html'
+    - name: 'Health Check'
+      value: 'https://api-dev.${DOMAIN}/reports/actuator/health'
+    - name: 'Logs'
+      value: 'https://grafana.${DOMAIN}/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Bnamespace%3D%5C%22ecotrack-dev%5C%22,app%3D%5C%22reporting-service%5C%22%7D%22%7D%5D'
+
+---
+# EcoTrack Database (shared development database)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-database-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: database
+    environment: development
+    service-type: database
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/database
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: false  # Never auto-delete database resources
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+        
+  info:
+    - name: 'Database Type'
+      value: 'PostgreSQL 15'
+    - name: 'Connection'
+      value: 'postgresql.ecotrack-dev.svc.cluster.local:5432'
+    - name: 'Health'
+      value: 'https://grafana.${DOMAIN}/d/postgresql-overview'
+
+---
+# EcoTrack Redis Cache (shared development cache)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ecotrack-redis-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: ecotrack
+    app.kubernetes.io/component: cache
+    environment: development
+    service-type: cache
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ecotrack
+  
+  source:
+    repoURL: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+    targetRevision: main
+    path: environments/dev/redis
+    
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ecotrack-dev
+    
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+        
+  info:
+    - name: 'Cache Type'
+      value: 'Redis 7'
+    - name: 'Connection'
+      value: 'redis.ecotrack-dev.svc.cluster.local:6379'
+    - name: 'Health'
+      value: 'https://grafana.${DOMAIN}/d/redis-overview'

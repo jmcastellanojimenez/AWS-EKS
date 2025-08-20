@@ -1,0 +1,618 @@
+---
+# EventListener for GitHub webhooks
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-webhook-listener
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: github-webhook-listener
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  serviceAccountName: tekton-pipeline
+  
+  # Service configuration
+  resources:
+    kubernetesResource:
+      serviceType: ClusterIP
+      spec:
+        ports:
+        - name: http
+          port: 8080
+          protocol: TCP
+          targetPort: 8080
+        selector:
+          app.kubernetes.io/name: github-webhook-listener
+  
+  # Triggers for different GitHub events
+  triggers:
+    # Trigger for push events to main branch
+    - name: github-push-main
+      interceptors:
+        - name: "github-interceptor"
+          ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secretToken
+            - name: "eventTypes"
+              value: ["push"]
+        - name: "cel-filter"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "body.ref == 'refs/heads/main' || body.ref == 'refs/heads/master'"
+      
+      bindings:
+        - ref: github-push-binding
+      
+      template:
+        ref: java-microservice-pipeline-template
+
+    # Trigger for pull request events
+    - name: github-pull-request
+      interceptors:
+        - name: "github-interceptor"
+          ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secretToken
+            - name: "eventTypes"
+              value: ["pull_request"]
+        - name: "cel-filter"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "body.action in ['opened', 'synchronize', 'reopened']"
+      
+      bindings:
+        - ref: github-pr-binding
+      
+      template:
+        ref: java-microservice-pr-template
+
+    # Trigger for release events
+    - name: github-release
+      interceptors:
+        - name: "github-interceptor"
+          ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: secretToken
+            - name: "eventTypes"
+              value: ["release"]
+        - name: "cel-filter"
+          ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: "body.action == 'published'"
+      
+      bindings:
+        - ref: github-release-binding
+      
+      template:
+        ref: java-microservice-release-template
+
+---
+# TriggerBinding for push events
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-push-binding
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: github-push-binding
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  params:
+    # Git repository information
+    - name: gitrepositoryurl
+      value: $(body.repository.clone_url)
+    - name: gitrevision
+      value: $(body.head_commit.id)
+    - name: gitbranch
+      value: $(body.ref)
+    
+    # Repository metadata
+    - name: reponame
+      value: $(body.repository.name)
+    - name: repoowner
+      value: $(body.repository.owner.login)
+    - name: repofullname
+      value: $(body.repository.full_name)
+    
+    # Commit information
+    - name: commitmessage
+      value: $(body.head_commit.message)
+    - name: commitsha
+      value: $(body.head_commit.id)
+    - name: commitauthor
+      value: $(body.head_commit.author.name)
+    
+    # Pipeline parameters
+    - name: servicename
+      value: $(body.repository.name)
+    - name: environment
+      value: "dev"
+    - name: imagetag
+      value: $(body.head_commit.id)
+    - name: deploymenttarget
+      value: "automatic"
+
+---
+# TriggerBinding for pull request events
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-pr-binding
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: github-pr-binding
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  params:
+    # Git repository information
+    - name: gitrepositoryurl
+      value: $(body.pull_request.head.repo.clone_url)
+    - name: gitrevision
+      value: $(body.pull_request.head.sha)
+    - name: gitbranch
+      value: $(body.pull_request.head.ref)
+    
+    # Repository metadata
+    - name: reponame
+      value: $(body.repository.name)
+    - name: repoowner
+      value: $(body.repository.owner.login)
+    - name: repofullname
+      value: $(body.repository.full_name)
+    
+    # Pull request information
+    - name: prnumber
+      value: $(body.number)
+    - name: prtitle
+      value: $(body.pull_request.title)
+    - name: prauthor
+      value: $(body.pull_request.user.login)
+    
+    # Pipeline parameters
+    - name: servicename
+      value: $(body.repository.name)
+    - name: environment
+      value: "pr-$(body.number)"
+    - name: imagetag
+      value: "pr-$(body.number)-$(body.pull_request.head.sha)"
+    - name: deploymenttarget
+      value: "preview"
+
+---
+# TriggerBinding for release events
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-release-binding
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: github-release-binding
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  params:
+    # Git repository information
+    - name: gitrepositoryurl
+      value: $(body.repository.clone_url)
+    - name: gitrevision
+      value: $(body.release.tag_name)
+    - name: gitbranch
+      value: $(body.release.target_commitish)
+    
+    # Repository metadata
+    - name: reponame
+      value: $(body.repository.name)
+    - name: repoowner
+      value: $(body.repository.owner.login)
+    - name: repofullname
+      value: $(body.repository.full_name)
+    
+    # Release information
+    - name: releasename
+      value: $(body.release.name)
+    - name: releasetag
+      value: $(body.release.tag_name)
+    - name: releaseauthor
+      value: $(body.release.author.login)
+    
+    # Pipeline parameters
+    - name: servicename
+      value: $(body.repository.name)
+    - name: environment
+      value: "prod"
+    - name: imagetag
+      value: $(body.release.tag_name)
+    - name: deploymenttarget
+      value: "production"
+
+---
+# TriggerTemplate for main branch pushes
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: java-microservice-pipeline-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: java-microservice-pipeline-template
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  params:
+    # Git parameters
+    - name: gitrepositoryurl
+      description: Git repository URL
+    - name: gitrevision
+      description: Git revision
+    - name: gitbranch
+      description: Git branch
+    
+    # Repository parameters
+    - name: reponame
+      description: Repository name
+    - name: repoowner
+      description: Repository owner
+    - name: repofullname
+      description: Full repository name
+    
+    # Pipeline parameters
+    - name: servicename
+      description: Service name
+    - name: environment
+      description: Target environment
+    - name: imagetag
+      description: Container image tag
+    - name: deploymenttarget
+      description: Deployment target
+    
+    # Commit parameters
+    - name: commitmessage
+      description: Commit message
+      default: ""
+    - name: commitsha
+      description: Commit SHA
+      default: ""
+    - name: commitauthor
+      description: Commit author
+      default: ""
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: ecotrack-$(tt.params.servicename)-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/name: $(tt.params.servicename)
+          app.kubernetes.io/part-of: ecotrack
+          tekton.dev/pipeline: java-microservice-pipeline
+          git.repository: $(tt.params.repofullname)
+          git.branch: $(tt.params.gitbranch)
+          environment: $(tt.params.environment)
+        annotations:
+          tekton.dev/git-status: "pending"
+          git.commit.sha: $(tt.params.commitsha)
+          git.commit.author: $(tt.params.commitauthor)
+          git.commit.message: $(tt.params.commitmessage)
+      spec:
+        serviceAccountName: tekton-pipeline
+        pipelineRef:
+          name: java-microservice-pipeline
+        
+        params:
+          # Source parameters
+          - name: SOURCE_REPO_URL
+            value: $(tt.params.gitrepositoryurl)
+          - name: SOURCE_REVISION
+            value: $(tt.params.gitrevision)
+          - name: SOURCE_BRANCH
+            value: $(tt.params.gitbranch)
+          
+          # Service parameters
+          - name: SERVICE_NAME
+            value: $(tt.params.servicename)
+          - name: ENVIRONMENT
+            value: $(tt.params.environment)
+          
+          # Build parameters
+          - name: JAVA_VERSION
+            value: "17"
+          - name: MAVEN_GOALS
+            value: "clean package"
+          - name: ENABLE_NATIVE_BUILD
+            value: "false"
+          - name: RUN_TESTS
+            value: "true"
+          
+          # Container parameters
+          - name: CONTAINER_REGISTRY
+            value: "${CONTAINER_REGISTRY}"
+          - name: IMAGE_NAME
+            value: "ecotrack/$(tt.params.servicename)"
+          - name: IMAGE_TAG
+            value: $(tt.params.imagetag)
+          
+          # Security parameters
+          - name: SECURITY_SCAN_ENABLED
+            value: "true"
+          - name: SECURITY_SCAN_SEVERITY
+            value: "HIGH,CRITICAL"
+          - name: FAIL_ON_SECURITY_ISSUES
+            value: "false"
+          
+          # GitOps parameters
+          - name: GITOPS_REPO_URL
+            value: "https://github.com/${GITHUB_ORG}/ecotrack-manifests"
+          - name: GITOPS_BRANCH
+            value: "main"
+          - name: AUTO_DEPLOY
+            value: "true"
+          - name: CREATE_PR
+            value: "false"
+        
+        workspaces:
+          - name: source-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 2Gi
+          
+          - name: cache-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 5Gi
+          
+          - name: gitops-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+
+---
+# TriggerTemplate for pull requests
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: java-microservice-pr-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: java-microservice-pr-template
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  params:
+    # Git parameters
+    - name: gitrepositoryurl
+    - name: gitrevision
+    - name: gitbranch
+    
+    # Repository parameters
+    - name: reponame
+    - name: repoowner
+    - name: repofullname
+    
+    # PR parameters
+    - name: prnumber
+    - name: prtitle
+    - name: prauthor
+    
+    # Pipeline parameters
+    - name: servicename
+    - name: environment
+    - name: imagetag
+    - name: deploymenttarget
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: ecotrack-$(tt.params.servicename)-pr-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/name: $(tt.params.servicename)
+          app.kubernetes.io/part-of: ecotrack
+          tekton.dev/pipeline: java-microservice-pr-pipeline
+          git.repository: $(tt.params.repofullname)
+          git.branch: $(tt.params.gitbranch)
+          environment: $(tt.params.environment)
+          pr.number: $(tt.params.prnumber)
+        annotations:
+          tekton.dev/git-status: "pending"
+          pr.title: $(tt.params.prtitle)
+          pr.author: $(tt.params.prauthor)
+      spec:
+        serviceAccountName: tekton-pipeline
+        pipelineRef:
+          name: java-microservice-pr-pipeline
+        
+        params:
+          # Source parameters
+          - name: SOURCE_REPO_URL
+            value: $(tt.params.gitrepositoryurl)
+          - name: SOURCE_REVISION
+            value: $(tt.params.gitrevision)
+          - name: SOURCE_BRANCH
+            value: $(tt.params.gitbranch)
+          
+          # Service parameters
+          - name: SERVICE_NAME
+            value: $(tt.params.servicename)
+          - name: ENVIRONMENT
+            value: $(tt.params.environment)
+          
+          # PR parameters
+          - name: PR_NUMBER
+            value: $(tt.params.prnumber)
+          - name: PR_TITLE
+            value: $(tt.params.prtitle)
+          
+          # Build parameters (enhanced for PR validation)
+          - name: JAVA_VERSION
+            value: "17"
+          - name: MAVEN_GOALS
+            value: "clean verify"
+          - name: RUN_TESTS
+            value: "true"
+          - name: RUN_INTEGRATION_TESTS
+            value: "true"
+          
+          # Container parameters
+          - name: CONTAINER_REGISTRY
+            value: "${CONTAINER_REGISTRY}"
+          - name: IMAGE_NAME
+            value: "ecotrack/$(tt.params.servicename)"
+          - name: IMAGE_TAG
+            value: $(tt.params.imagetag)
+          
+          # Security parameters (stricter for PRs)
+          - name: SECURITY_SCAN_ENABLED
+            value: "true"
+          - name: SECURITY_SCAN_SEVERITY
+            value: "MEDIUM,HIGH,CRITICAL"
+          - name: FAIL_ON_SECURITY_ISSUES
+            value: "true"
+          
+          # No automatic deployment for PRs
+          - name: AUTO_DEPLOY
+            value: "false"
+
+---
+# TriggerTemplate for releases
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: java-microservice-release-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/name: java-microservice-release-template
+    app.kubernetes.io/part-of: gitops-platform
+spec:
+  params:
+    # Git parameters
+    - name: gitrepositoryurl
+    - name: gitrevision
+    - name: gitbranch
+    
+    # Repository parameters
+    - name: reponame
+    - name: repoowner
+    - name: repofullname
+    
+    # Release parameters
+    - name: releasename
+    - name: releasetag
+    - name: releaseauthor
+    
+    # Pipeline parameters
+    - name: servicename
+    - name: environment
+    - name: imagetag
+    - name: deploymenttarget
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: ecotrack-$(tt.params.servicename)-release-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/name: $(tt.params.servicename)
+          app.kubernetes.io/part-of: ecotrack
+          tekton.dev/pipeline: java-microservice-production-pipeline
+          git.repository: $(tt.params.repofullname)
+          git.branch: $(tt.params.gitbranch)
+          environment: $(tt.params.environment)
+          release.tag: $(tt.params.releasetag)
+        annotations:
+          tekton.dev/git-status: "pending"
+          release.name: $(tt.params.releasename)
+          release.author: $(tt.params.releaseauthor)
+      spec:
+        serviceAccountName: tekton-pipeline
+        pipelineRef:
+          name: java-microservice-production-pipeline
+        
+        params:
+          # Source parameters
+          - name: SOURCE_REPO_URL
+            value: $(tt.params.gitrepositoryurl)
+          - name: SOURCE_REVISION
+            value: $(tt.params.gitrevision)
+          - name: SOURCE_BRANCH
+            value: $(tt.params.gitbranch)
+          
+          # Service parameters
+          - name: SERVICE_NAME
+            value: $(tt.params.servicename)
+          - name: ENVIRONMENT
+            value: $(tt.params.environment)
+          
+          # Release parameters
+          - name: RELEASE_TAG
+            value: $(tt.params.releasetag)
+          - name: RELEASE_NAME
+            value: $(tt.params.releasename)
+          
+          # Build parameters (production settings)
+          - name: JAVA_VERSION
+            value: "17"
+          - name: MAVEN_GOALS
+            value: "clean package"
+          - name: ENABLE_NATIVE_BUILD
+            value: "true"
+          - name: RUN_TESTS
+            value: "true"
+          - name: RUN_INTEGRATION_TESTS
+            value: "true"
+          - name: RUN_PERFORMANCE_TESTS
+            value: "true"
+          
+          # Container parameters
+          - name: CONTAINER_REGISTRY
+            value: "${CONTAINER_REGISTRY}"
+          - name: IMAGE_NAME
+            value: "ecotrack/$(tt.params.servicename)"
+          - name: IMAGE_TAG
+            value: $(tt.params.imagetag)
+          
+          # Security parameters (strictest for production)
+          - name: SECURITY_SCAN_ENABLED
+            value: "true"
+          - name: SECURITY_SCAN_SEVERITY
+            value: "LOW,MEDIUM,HIGH,CRITICAL"
+          - name: FAIL_ON_SECURITY_ISSUES
+            value: "true"
+          
+          # GitOps parameters (production deployment with approval)
+          - name: GITOPS_REPO_URL
+            value: "https://github.com/${GITHUB_ORG}/ecotrack-manifests"
+          - name: GITOPS_BRANCH
+            value: "main"
+          - name: AUTO_DEPLOY
+            value: "false"
+          - name: CREATE_PR
+            value: "true"

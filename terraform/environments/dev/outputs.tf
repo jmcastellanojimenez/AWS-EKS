@@ -55,6 +55,22 @@ output "argocd_url" {
   value       = "https://${var.domain_name}/argocd"
 }
 
+# GitHub Actions specific outputs
+output "gitops_ready" {
+  description = "GitOps deployment status"
+  value       = try(length(module.gitops.namespace) > 0, false)
+}
+
+output "argocd_endpoint" {
+  description = "ArgoCD endpoint URL"
+  value       = try(module.gitops.argocd_url, "https://${var.domain_name}/argocd")
+}
+
+output "tekton_ready" {
+  description = "Tekton deployment status"  
+  value       = try(length(module.gitops.tekton_pipelines_controller) > 0, false)
+}
+
 # Service Mesh Outputs
 output "istio_gateway" {
   description = "Istio gateway service"

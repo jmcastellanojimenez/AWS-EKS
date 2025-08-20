@@ -1,0 +1,341 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: microservice-pipeline
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/categories: CI/CD
+    tekton.dev/tags: java, maven, graalvm, gitops, argocd
+    tekton.dev/displayName: "EcoTrack Microservice CI/CD Pipeline"
+spec:
+  description: >-
+    Complete CI/CD pipeline for EcoTrack Java microservices.
+    Builds, tests, scans, containerizes, and deploys via GitOps.
+  
+  params:
+    # Source repository parameters
+    - name: SOURCE_REPO_URL
+      description: Git repository URL for source code
+      type: string
+    - name: SOURCE_REVISION
+      description: Git revision to build (branch, tag, or commit SHA)
+      type: string
+      default: "main"
+    - name: SOURCE_SUBPATH
+      description: Subpath within the repository
+      type: string
+      default: "."
+    
+    # Build parameters
+    - name: SERVICE_NAME
+      description: Name of the microservice
+      type: string
+    - name: JAVA_VERSION
+      description: Java version for build (11, 17, 21)
+      type: string
+      default: "17"
+    - name: MAVEN_GOALS
+      description: Maven goals to execute
+      type: string
+      default: "clean package"
+    - name: ENABLE_NATIVE_BUILD
+      description: Enable GraalVM native image compilation
+      type: string
+      default: "false"
+    - name: RUN_TESTS
+      description: Whether to run tests during build
+      type: string
+      default: "true"
+    
+    # Container image parameters
+    - name: IMAGE_REGISTRY
+      description: Container registry URL
+      type: string
+      default: ""
+    - name: IMAGE_REPOSITORY
+      description: Image repository name
+      type: string
+    - name: IMAGE_TAG
+      description: Image tag
+      type: string
+      default: "latest"
+    - name: DOCKERFILE_PATH
+      description: Path to Dockerfile
+      type: string
+      default: "./Dockerfile"
+    
+    # Security scanning parameters
+    - name: SECURITY_SCAN_ENABLED
+      description: Enable security scanning
+      type: string
+      default: "true"
+    - name: SECURITY_SCAN_SEVERITY
+      description: Security scan severity levels
+      type: string
+      default: "HIGH,CRITICAL"
+    - name: FAIL_ON_SECURITY_ISSUES
+      description: Fail pipeline on security issues
+      type: string
+      default: "false"
+    
+    # GitOps parameters
+    - name: MANIFEST_REPO_URL
+      description: Git repository URL for manifests
+      type: string
+    - name: MANIFEST_REPO_BRANCH
+      description: Branch in manifest repository
+      type: string
+      default: "main"
+    - name: MANIFEST_TYPE
+      description: Type of manifests (kustomize, helm, yaml)
+      type: string
+      default: "kustomize"
+    - name: ENVIRONMENT
+      description: Target environment
+      type: string
+      default: "dev"
+    - name: AUTO_DEPLOY
+      description: Automatically deploy after successful build
+      type: string
+      default: "true"
+
+  workspaces:
+    - name: source-workspace
+      description: Workspace for source code
+    - name: cache-workspace
+      description: Workspace for build cache
+    - name: manifest-workspace
+      description: Workspace for manifest repository
+
+  tasks:
+    # Clone source repository
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.SOURCE_REPO_URL)
+        - name: revision
+          value: $(params.SOURCE_REVISION)
+        - name: subPath
+          value: $(params.SOURCE_SUBPATH)
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: source-workspace
+
+    # Run tests (if enabled)
+    - name: run-tests
+      taskRef:
+        name: maven
+        kind: ClusterTask
+      runAfter: ["fetch-source"]
+      when:
+        - input: "$(params.RUN_TESTS)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      params:
+        - name: GOALS
+          value: ["test"]
+        - name: MAVEN_IMAGE
+          value: "eclipse-temurin:$(params.JAVA_VERSION)-jdk"
+      workspaces:
+        - name: source
+          workspace: source-workspace
+        - name: maven-settings
+          workspace: cache-workspace
+
+    # Build application and container image
+    - name: build-application
+      taskRef:
+        name: build-java-app
+      runAfter: ["run-tests"]
+      params:
+        - name: IMAGE
+          value: "$(params.IMAGE_REPOSITORY):$(params.IMAGE_TAG)"
+        - name: CONTEXT
+          value: $(params.SOURCE_SUBPATH)
+        - name: DOCKERFILE
+          value: $(params.DOCKERFILE_PATH)
+        - name: JAVA_VERSION
+          value: $(params.JAVA_VERSION)
+        - name: MAVEN_GOALS
+          value: $(params.MAVEN_GOALS)
+        - name: MAVEN_OPTIONS
+          value: "$(params.RUN_TESTS == 'true' ? '' : '-DskipTests')"
+        - name: ENABLE_NATIVE_BUILD
+          value: $(params.ENABLE_NATIVE_BUILD)
+        - name: REGISTRY_URL
+          value: $(params.IMAGE_REGISTRY)
+        - name: PUSH_IMAGE
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: source-workspace
+        - name: cache
+          workspace: cache-workspace
+      results:
+        - name: IMAGE_DIGEST
+          value: $(tasks.build-application.results.IMAGE_DIGEST)
+        - name: IMAGE_URL
+          value: $(tasks.build-application.results.IMAGE_URL)
+
+    # Security scanning (if enabled)
+    - name: security-scan
+      taskRef:
+        name: security-scan
+      runAfter: ["build-application"]
+      when:
+        - input: "$(params.SECURITY_SCAN_ENABLED)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      params:
+        - name: IMAGE
+          value: $(tasks.build-application.results.IMAGE_URL)
+        - name: SCAN_TYPE
+          value: "image"
+        - name: FORMAT
+          value: "table"
+        - name: SEVERITY
+          value: $(params.SECURITY_SCAN_SEVERITY)
+        - name: EXIT_CODE
+          value: "$(params.FAIL_ON_SECURITY_ISSUES == 'true' ? '1' : '0')"
+        - name: REPORT_OUTPUT
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: source-workspace
+
+    # Update GitOps manifests (if auto-deploy enabled)
+    - name: update-manifests
+      taskRef:
+        name: update-manifests
+      runAfter: ["security-scan"]
+      when:
+        - input: "$(params.AUTO_DEPLOY)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      params:
+        - name: MANIFEST_REPO_URL
+          value: $(params.MANIFEST_REPO_URL)
+        - name: MANIFEST_REPO_BRANCH
+          value: $(params.MANIFEST_REPO_BRANCH)
+        - name: IMAGE_URL
+          value: $(tasks.build-application.results.IMAGE_URL)
+        - name: SERVICE_NAME
+          value: $(params.SERVICE_NAME)
+        - name: ENVIRONMENT
+          value: $(params.ENVIRONMENT)
+        - name: MANIFEST_TYPE
+          value: $(params.MANIFEST_TYPE)
+        - name: MANIFEST_PATH
+          value: "environments/$(params.ENVIRONMENT)/$(params.SERVICE_NAME)"
+        - name: CREATE_PR
+          value: "false"
+        - name: COMMIT_MESSAGE
+          value: "chore: update $(params.SERVICE_NAME) image to $(params.IMAGE_TAG) in $(params.ENVIRONMENT)"
+      workspaces:
+        - name: source
+          workspace: manifest-workspace
+
+  finally:
+    # Cleanup and notifications
+    - name: cleanup-workspace
+      taskSpec:
+        steps:
+          - name: cleanup
+            image: alpine:3.18
+            script: |
+              #!/bin/sh
+              echo "Pipeline completed for service: $(params.SERVICE_NAME)"
+              echo "Image built: $(tasks.build-application.results.IMAGE_URL)"
+              echo "Environment: $(params.ENVIRONMENT)"
+              
+              # Cleanup temporary files
+              echo "Cleaning up temporary files..."
+              rm -rf /tmp/tekton-*
+              
+              echo "Pipeline cleanup completed"
+
+    # Send notifications on failure
+    - name: failure-notification
+      when:
+        - input: "$(tasks.status)"
+          operator: in
+          values: ["Failed"]
+      taskSpec:
+        steps:
+          - name: notify-failure
+            image: curlimages/curl:8.2.1
+            env:
+              - name: SLACK_WEBHOOK
+                valueFrom:
+                  secretKeyRef:
+                    name: slack-webhook-secret
+                    key: webhook-url
+                    optional: true
+            script: |
+              #!/bin/sh
+              echo "Pipeline failed for service: $(params.SERVICE_NAME)"
+              
+              # Send Slack notification if webhook is configured
+              if [ -n "$SLACK_WEBHOOK" ]; then
+                curl -X POST -H 'Content-type: application/json' \
+                  --data '{
+                    "text": "🚨 Pipeline Failed",
+                    "attachments": [{
+                      "color": "danger",
+                      "fields": [
+                        {"title": "Service", "value": "$(params.SERVICE_NAME)", "short": true},
+                        {"title": "Environment", "value": "$(params.ENVIRONMENT)", "short": true},
+                        {"title": "Revision", "value": "$(params.SOURCE_REVISION)", "short": true},
+                        {"title": "Repository", "value": "$(params.SOURCE_REPO_URL)", "short": false}
+                      ]
+                    }]
+                  }' \
+                  "$SLACK_WEBHOOK"
+              fi
+
+    # Send success notifications
+    - name: success-notification
+      when:
+        - input: "$(tasks.status)"
+          operator: in
+          values: ["Succeeded"]
+      taskSpec:
+        steps:
+          - name: notify-success
+            image: curlimages/curl:8.2.1
+            env:
+              - name: SLACK_WEBHOOK
+                valueFrom:
+                  secretKeyRef:
+                    name: slack-webhook-secret
+                    key: webhook-url
+                    optional: true
+            script: |
+              #!/bin/sh
+              echo "Pipeline succeeded for service: $(params.SERVICE_NAME)"
+              
+              # Send Slack notification if webhook is configured
+              if [ -n "$SLACK_WEBHOOK" ]; then
+                curl -X POST -H 'Content-type: application/json' \
+                  --data '{
+                    "text": "✅ Pipeline Succeeded",
+                    "attachments": [{
+                      "color": "good",
+                      "fields": [
+                        {"title": "Service", "value": "$(params.SERVICE_NAME)", "short": true},
+                        {"title": "Environment", "value": "$(params.ENVIRONMENT)", "short": true},
+                        {"title": "Image", "value": "$(tasks.build-application.results.IMAGE_URL)", "short": false},
+                        {"title": "Revision", "value": "$(params.SOURCE_REVISION)", "short": true}
+                      ]
+                    }]
+                  }' \
+                  "$SLACK_WEBHOOK"
+              fi

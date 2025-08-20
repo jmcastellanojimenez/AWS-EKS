@@ -1,0 +1,368 @@
+# Prometheus Stack Configuration for EKS Learning Lab
+# Optimized for cost and learning
+
+# Global settings
+global:
+  rbac:
+    create: true
+  imageRegistry: ""
+  
+# Prometheus configuration
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Retention and storage
+    retention: 7d
+    retentionSize: 5GB
+    
+    # Resource limits for cost optimization
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-encrypted
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    
+    # Service monitor selectors
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    
+    # Pod monitor selectors
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    
+    # Rule selectors
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+    
+    # Additional scrape configs for learning
+    additionalScrapeConfigs:
+    - job_name: 'kubernetes-pods'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+    
+    # External labels for federation
+    externalLabels:
+      cluster: eks-learning-lab
+      environment: dev
+
+# AlertManager configuration
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    # Resource limits
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+    
+    # Storage
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-encrypted
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+    
+    # Alerting configuration
+    config:
+      global:
+        smtp_smarthost: 'localhost:587'
+        smtp_from: 'alerts@eks-learning-lab.local'
+      
+      # Routing configuration
+      route:
+        group_by: ['alertname', 'cluster', 'service']
+        group_wait: 10s
+        group_interval: 10s
+        repeat_interval: 1h
+        receiver: 'default-receiver'
+        routes:
+        - match:
+            severity: critical
+          receiver: 'critical-receiver'
+          continue: true
+        - match:
+            alertname: DeadMansSwitch
+          receiver: 'null'
+      
+      # Receivers configuration
+      receivers:
+      - name: 'default-receiver'
+        # For learning purposes - log to stdout
+        webhook_configs:
+        - url: 'http://webhook-logger.monitoring.svc.cluster.local:8080/webhook'
+          send_resolved: true
+      
+      - name: 'critical-receiver'
+        webhook_configs:
+        - url: 'http://webhook-logger.monitoring.svc.cluster.local:8080/critical'
+          send_resolved: true
+      
+      - name: 'null'
+
+# Grafana configuration
+grafana:
+  enabled: true
+  
+  # Admin credentials
+  adminPassword: admin123
+  
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Persistence disabled for cost savings
+  persistence:
+    enabled: false
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+  
+  # Grafana configuration
+  grafana.ini:
+    server:
+      root_url: http://localhost:3000/grafana/
+      serve_from_sub_path: true
+    
+    analytics:
+      check_for_updates: false
+      reporting_enabled: false
+    
+    log:
+      mode: console
+      level: info
+    
+    paths:
+      data: /var/lib/grafana/
+      logs: /var/log/grafana
+      plugins: /var/lib/grafana/plugins
+      provisioning: /etc/grafana/provisioning
+  
+  # Data sources
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        access: proxy
+        isDefault: true
+        editable: true
+      - name: Jaeger
+        type: jaeger
+        url: http://jaeger-query.tracing.svc.cluster.local:16686
+        access: proxy
+        editable: true
+      - name: Loki
+        type: loki
+        url: http://loki.logging.svc.cluster.local:3100
+        access: proxy
+        editable: true
+  
+  # Dashboard providers
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+      - name: 'kubernetes'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+  
+  # Pre-configured dashboards
+  dashboards:
+    default:
+      kubernetes-cluster-overview:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      kubernetes-pod-overview:
+        gnetId: 6336
+        revision: 1
+        datasource: Prometheus
+      node-exporter:
+        gnetId: 1860
+        revision: 27
+        datasource: Prometheus
+    kubernetes:
+      kubernetes-api-server:
+        gnetId: 12006
+        revision: 1
+        datasource: Prometheus
+      kubernetes-system-api-server:
+        gnetId: 15757
+        revision: 3
+        datasource: Prometheus
+
+# Node Exporter
+nodeExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 30Mi
+    limits:
+      cpu: 100m
+      memory: 60Mi
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Prometheus Operator
+prometheusOperator:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Admission webhook
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+# Default rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false  # EKS managed
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: false  # EKS managed
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: false  # EKS managed
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# Additional learning configurations
+additionalPrometheusRulesMap:
+  learning-rules:
+    groups:
+    - name: learning.rules
+      rules:
+      - alert: HighPodCPUUsage
+        expr: (sum by (pod, namespace) (rate(container_cpu_usage_seconds_total[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          learning: "true"
+        annotations:
+          summary: "High CPU usage detected"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has high CPU usage: {{ $value }}%"
+      
+      - alert: HighPodMemoryUsage
+        expr: (sum by (pod, namespace) (container_memory_working_set_bytes) / sum by (pod, namespace) (container_spec_memory_limit_bytes) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          learning: "true"
+        annotations:
+          summary: "High memory usage detected"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has high memory usage: {{ $value }}%"
+      
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          learning: "true"
+        annotations:
+          summary: "Pod is crash looping"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is crash looping"

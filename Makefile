@@ -176,6 +176,14 @@ dev-destroy: ## Quick destroy dev environment
 dev-status: ## Show dev environment status
 	@$(MAKE) status ENV=dev
 
+# GitOps helpers
+gitops-fix: ## Fix GitOps CRD installation issues
+	@echo "$(BLUE)Deploying GitOps with CRD fix...$(NC)"
+	./scripts/deploy-gitops-fix.sh $(ENV)
+
+deploy-gitops: ## Deploy GitOps module with proper CRD handling
+	@$(MAKE) gitops-fix ENV=$(ENV)
+
 # Production helpers
 prod-plan: ## Plan production deployment
 	@$(MAKE) plan ENV=prod

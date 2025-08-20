@@ -1,0 +1,483 @@
+# ArgoCD Production Configuration
+# Integrates with Ambassador ingress and LGTM observability stack
+
+## Global Configuration
+global:
+  # Domain will be configured during installation
+  domain: ${ARGOCD_DOMAIN:-argocd.local}
+  image:
+    repository: quay.io/argoproj/argocd
+    tag: v2.10.0
+
+## ArgoCD Server Configuration
+server:
+  name: argocd-server
+  replicas: 2
+  
+  # Auto-scaling configuration
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    portName: http
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "8080"
+      prometheus.io/path: "/metrics"
+  
+  # Ingress configuration for Ambassador
+  ingress:
+    enabled: true
+    ingressClassName: ""
+    annotations:
+      kubernetes.io/ingress.class: "ambassador"
+      getambassador.io/config: |
+        ---
+        apiVersion: getambassador.io/v3alpha1
+        kind: Mapping
+        name: argocd-server
+        prefix: /
+        service: argocd-server:80
+        host: ${ARGOCD_DOMAIN:-argocd.local}
+        timeout_ms: 30000
+        retry_policy:
+          retry_on: "5xx"
+          num_retries: 3
+        headers:
+          x-forwarded-proto: https
+        ---
+        apiVersion: getambassador.io/v3alpha1
+        kind: TLSContext
+        name: argocd-tls
+        hosts:
+        - ${ARGOCD_DOMAIN:-argocd.local}
+        secret: argocd-tls-secret
+    hosts:
+      - ${ARGOCD_DOMAIN:-argocd.local}
+    tls:
+      - secretName: argocd-tls-secret
+        hosts:
+          - ${ARGOCD_DOMAIN:-argocd.local}
+  
+  # gRPC configuration for CLI access
+  grpc:
+    service:
+      type: ClusterIP
+      port: 443
+      annotations:
+        getambassador.io/config: |
+          ---
+          apiVersion: getambassador.io/v3alpha1
+          kind: Mapping
+          name: argocd-grpc
+          prefix: /
+          service: argocd-server:443
+          host: ${ARGOCD_GRPC_DOMAIN:-argocd-grpc.local}
+          grpc: true
+          timeout_ms: 30000
+  
+  # Metrics configuration for Prometheus
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      port: 8083
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
+        prometheus.io/path: "/metrics"
+    serviceMonitor:
+      enabled: true
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-server-metrics
+      namespace: observability
+      additionalLabels:
+        monitoring: lgtm-stack
+
+## ArgoCD Application Controller
+controller:
+  name: argocd-application-controller
+  replicas: 2
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  
+  # Metrics configuration
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      port: 8082
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: "/metrics"
+    serviceMonitor:
+      enabled: true
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-application-controller-metrics
+      namespace: observability
+      additionalLabels:
+        monitoring: lgtm-stack
+  
+  # Application sync configuration
+  args:
+    appResyncPeriod: "180"
+    selfHealTimeout: "5"
+    statusProcessors: "20"
+    operationProcessors: "10"
+
+## Repository Server Configuration
+repoServer:
+  name: argocd-repo-server
+  replicas: 2
+  
+  # Auto-scaling
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  
+  # Metrics configuration
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      port: 8084
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8084"
+        prometheus.io/path: "/metrics"
+    serviceMonitor:
+      enabled: true
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-repo-server-metrics
+      namespace: observability
+      additionalLabels:
+        monitoring: lgtm-stack
+
+## ApplicationSet Controller
+applicationSet:
+  enabled: true
+  name: argocd-applicationset-controller
+  replicas: 2
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Metrics configuration
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      port: 8080
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    serviceMonitor:
+      enabled: true
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-applicationset-controller-metrics
+      namespace: observability
+      additionalLabels:
+        monitoring: lgtm-stack
+
+## Notifications Controller
+notifications:
+  enabled: true
+  name: argocd-notifications-controller
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Metrics configuration
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      port: 9001
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9001"
+        prometheus.io/path: "/metrics"
+    serviceMonitor:
+      enabled: true
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-notifications-controller-metrics
+      namespace: observability
+      additionalLabels:
+        monitoring: lgtm-stack
+  
+  # Notification configuration (will be set up via ConfigMap)
+  secret:
+    create: true
+    items:
+      slack-token: ""
+  
+  # Default notification templates
+  templates:
+    template.app-deployed: |
+      message: |
+        🚀 **Application Deployed Successfully**
+        Application: {{.app.metadata.name}}
+        Environment: {{.app.metadata.labels.environment}}
+        Sync Status: {{.app.status.sync.status}}
+        Health: {{.app.status.health.status}}
+      slack:
+        attachments: |
+          [{
+            "title": "{{.app.metadata.name}} Deployed",
+            "title_link": "{{.context.argocdUrl}}/applications/{{.app.metadata.name}}",
+            "color": "#18be52",
+            "fields": [
+              {"title": "Environment", "value": "{{.app.metadata.labels.environment}}", "short": true},
+              {"title": "Sync Status", "value": "{{.app.status.sync.status}}", "short": true},
+              {"title": "Repository", "value": "{{.app.spec.source.repoURL}}", "short": false}
+            ]
+          }]
+    
+    template.app-sync-failed: |
+      message: |
+        ❌ **Application Sync Failed**
+        Application: {{.app.metadata.name}}
+        Environment: {{.app.metadata.labels.environment}}
+        Error: {{.app.status.operationState.message}}
+      slack:
+        attachments: |
+          [{
+            "title": "{{.app.metadata.name}} Sync Failed",
+            "title_link": "{{.context.argocdUrl}}/applications/{{.app.metadata.name}}",
+            "color": "#f42c04",
+            "fields": [
+              {"title": "Environment", "value": "{{.app.metadata.labels.environment}}", "short": true},
+              {"title": "Error", "value": "{{.app.status.operationState.message}}", "short": false}
+            ]
+          }]
+  
+  triggers:
+    trigger.on-deployed: |
+      - when: app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+        send: [app-deployed]
+    trigger.on-sync-failed: |
+      - when: app.status.operationState.phase in ['Error', 'Failed']
+        send: [app-sync-failed]
+
+## Redis Configuration
+redis:
+  enabled: true
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Metrics
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-redis-metrics
+      namespace: observability
+      additionalLabels:
+        monitoring: lgtm-stack
+
+## Configuration
+configs:
+  # ArgoCD Configuration
+  cm:
+    # Server configuration
+    server.insecure: "false"
+    server.grpc.web: "true"
+    server.enable.proxy.extension: "true"
+    
+    # Application configuration
+    application.instanceLabelKey: argocd.argoproj.io/instance
+    
+    # Timeout settings
+    timeout.reconciliation: "180s"
+    timeout.hard.reconciliation: "0s"
+    
+    # Resource exclusions for better performance
+    resource.exclusions: |
+      - apiVersions:
+        - v1
+        kinds:
+        - Event
+        - Secret
+        clusters:
+        - "*"
+    
+    # URL configuration
+    url: https://${ARGOCD_DOMAIN:-argocd.local}
+    
+    # Application links for observability integration
+    application.links: |
+      - url: https://${GRAFANA_DOMAIN:-grafana.local}/d/{{.metadata.labels.service}}-dashboard?var-namespace={{.metadata.namespace}}
+        title: Grafana Dashboard
+        description: View metrics and logs for this application
+        icon.class: "fa fa-chart-line"
+      - url: https://${TEKTON_DOMAIN:-tekton.local}/#/namespaces/tekton-pipelines/pipelineruns
+        title: Tekton Pipelines
+        description: View CI/CD pipeline runs
+        icon.class: "fa fa-rocket"
+      - url: https://${GRAFANA_DOMAIN:-grafana.local}/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Bnamespace%3D%5C%22{{.metadata.namespace}}%5C%22,app%3D%5C%22{{.metadata.labels.app}}%5C%22%7D%22%7D%5D
+        title: Application Logs
+        description: View application logs in Loki
+        icon.class: "fa fa-file-text"
+  
+  # RBAC Configuration
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      # Admin role - full access
+      p, role:admin, applications, *, *, allow
+      p, role:admin, clusters, *, *, allow
+      p, role:admin, repositories, *, *, allow
+      p, role:admin, logs, get, *, allow
+      p, role:admin, exec, create, *, allow
+      
+      # Developer role - application management
+      p, role:developer, applications, get, *, allow
+      p, role:developer, applications, sync, *, allow
+      p, role:developer, applications, override, *, allow
+      p, role:developer, applications, action/*, *, allow
+      p, role:developer, logs, get, *, allow
+      p, role:developer, repositories, get, *, allow
+      p, role:developer, repositories, create, *, allow
+      p, role:developer, repositories, update, *, allow
+      
+      # Readonly role - view only
+      p, role:readonly, applications, get, *, allow
+      p, role:readonly, repositories, get, *, allow
+      p, role:readonly, logs, get, *, allow
+      
+      # Project-specific roles
+      p, role:ecotrack-admin, applications, *, ecotrack/*, allow
+      p, role:ecotrack-developer, applications, get, ecotrack/*, allow
+      p, role:ecotrack-developer, applications, sync, ecotrack/*, allow
+      p, role:ecotrack-developer, applications, action/*, ecotrack/*, allow
+      
+      # Group mappings (to be configured with SSO)
+      g, argocd:admin, role:admin
+      g, ecotrack:admin, role:ecotrack-admin
+      g, ecotrack:developer, role:ecotrack-developer
+      g, readonly, role:readonly
+  
+  # Repository configuration templates
+  credentialTemplates:
+    github-template:
+      url: "https://github.com/${GITHUB_ORG}"
+      username: "${GITHUB_USERNAME}"
+      password: "${GITHUB_TOKEN}"
+  
+  # Default repository (to be configured during setup)
+  repositories:
+    ecotrack-manifests:
+      type: git
+      url: https://github.com/${GITHUB_ORG}/ecotrack-manifests
+      name: ecotrack-manifests
+
+## Security Configuration
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  fsGroup: 999
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+## Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+## Node Affinity and Tolerations
+nodeSelector:
+  kubernetes.io/os: linux
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - argocd-server
+            - argocd-application-controller
+        topologyKey: kubernetes.io/hostname
+
+## Additional labels and annotations
+podLabels:
+  app.kubernetes.io/part-of: gitops-platform
+  monitoring: lgtm-stack
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"

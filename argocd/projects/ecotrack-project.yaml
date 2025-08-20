@@ -1,0 +1,286 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ecotrack
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ecotrack-project
+    app.kubernetes.io/part-of: gitops-platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: >-
+    EcoTrack microservices platform project for managing all 
+    environmental tracking applications across multiple environments.
+
+  # Source repositories that applications within this project can pull from
+  sourceRepos:
+    # EcoTrack GitOps manifest repository
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-manifests'
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-manifests.git'
+    
+    # EcoTrack microservice repositories (for monitoring and reference)
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-user-service'
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-tracking-service'
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-analytics-service'
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-notification-service'
+    - 'https://github.com/${GITHUB_ORG}/ecotrack-reporting-service'
+    
+    # Helm chart repositories
+    - 'https://charts.helm.sh/stable'
+    - 'https://charts.bitnami.com/bitnami'
+    - 'https://kubernetes-sigs.github.io/metrics-server/'
+
+  # Destinations where applications within this project can be deployed
+  destinations:
+    # Development environment
+    - namespace: 'ecotrack-dev'
+      server: 'https://kubernetes.default.svc'
+      name: 'in-cluster'
+    
+    # Staging environment
+    - namespace: 'ecotrack-staging'
+      server: 'https://kubernetes.default.svc'
+      name: 'in-cluster'
+    
+    # Production environment
+    - namespace: 'ecotrack-prod'
+      server: 'https://kubernetes.default.svc'
+      name: 'in-cluster'
+    
+    # System namespaces for monitoring and infrastructure
+    - namespace: 'observability'
+      server: 'https://kubernetes.default.svc'
+      name: 'in-cluster'
+    
+    # ArgoCD namespace for app-of-apps pattern
+    - namespace: 'argocd'
+      server: 'https://kubernetes.default.svc'
+      name: 'in-cluster'
+
+  # Cluster resource allow list
+  clusterResourceWhitelist:
+    # Core Kubernetes resources
+    - group: ''
+      kind: Namespace
+    - group: ''
+      kind: PersistentVolume
+    
+    # RBAC resources
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+    
+    # Custom Resource Definitions
+    - group: 'apiextensions.k8s.io'
+      kind: CustomResourceDefinition
+    
+    # Network policies and security
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+    - group: 'policy'
+      kind: PodSecurityPolicy
+    
+    # Monitoring and observability
+    - group: 'monitoring.coreos.com'
+      kind: ServiceMonitor
+    - group: 'monitoring.coreos.com'
+      kind: PrometheusRule
+    
+    # Storage classes
+    - group: 'storage.k8s.io'
+      kind: StorageClass
+
+  # Namespace-scoped resource allow list
+  namespaceResourceWhitelist:
+    # Core Kubernetes resources
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: ''
+      kind: Pod
+    - group: ''
+      kind: Event
+    
+    # Applications and workloads
+    - group: 'apps'
+      kind: Deployment
+    - group: 'apps'
+      kind: StatefulSet
+    - group: 'apps'
+      kind: DaemonSet
+    - group: 'apps'
+      kind: ReplicaSet
+    
+    # Batch jobs
+    - group: 'batch'
+      kind: Job
+    - group: 'batch'
+      kind: CronJob
+    
+    # Networking
+    - group: 'networking.k8s.io'
+      kind: Ingress
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+    
+    # Auto-scaling
+    - group: 'autoscaling'
+      kind: HorizontalPodAutoscaler
+    - group: 'autoscaling'
+      kind: VerticalPodAutoscaler
+    
+    # Pod disruption budgets
+    - group: 'policy'
+      kind: PodDisruptionBudget
+    
+    # Service mesh (Istio)
+    - group: 'networking.istio.io'
+      kind: VirtualService
+    - group: 'networking.istio.io'
+      kind: DestinationRule
+    - group: 'networking.istio.io'
+      kind: Gateway
+    
+    # Monitoring resources
+    - group: 'monitoring.coreos.com'
+      kind: ServiceMonitor
+    - group: 'monitoring.coreos.com'
+      kind: PodMonitor
+    
+    # Ambassador resources
+    - group: 'getambassador.io'
+      kind: Mapping
+    - group: 'getambassador.io'
+      kind: TLSContext
+    - group: 'getambassador.io'
+      kind: Host
+
+  # Role definitions for project access control
+  roles:
+    # Admin role - full access to the project
+    - name: admin
+      description: Full administrative access to EcoTrack project
+      policies:
+        - p, proj:ecotrack:admin, applications, *, ecotrack/*, allow
+        - p, proj:ecotrack:admin, repositories, *, *, allow
+        - p, proj:ecotrack:admin, logs, get, ecotrack/*, allow
+        - p, proj:ecotrack:admin, exec, create, ecotrack/*, allow
+      groups:
+        - ecotrack:admin
+        - platform:admin
+
+    # Developer role - application management access
+    - name: developer
+      description: Developer access for application deployment and management
+      policies:
+        - p, proj:ecotrack:developer, applications, get, ecotrack/*, allow
+        - p, proj:ecotrack:developer, applications, sync, ecotrack/*, allow
+        - p, proj:ecotrack:developer, applications, action/*, ecotrack/*, allow
+        - p, proj:ecotrack:developer, applications, override, ecotrack/*, allow
+        - p, proj:ecotrack:developer, repositories, get, *, allow
+        - p, proj:ecotrack:developer, logs, get, ecotrack/*, allow
+      groups:
+        - ecotrack:developer
+        - platform:developer
+
+    # DevOps role - infrastructure and deployment management
+    - name: devops
+      description: DevOps access for CI/CD and infrastructure management
+      policies:
+        - p, proj:ecotrack:devops, applications, *, ecotrack/*, allow
+        - p, proj:ecotrack:devops, repositories, *, *, allow
+        - p, proj:ecotrack:devops, logs, get, ecotrack/*, allow
+        - p, proj:ecotrack:devops, exec, create, ecotrack/*, allow
+      groups:
+        - ecotrack:devops
+        - platform:devops
+
+    # Readonly role - view-only access
+    - name: readonly
+      description: Read-only access to EcoTrack applications
+      policies:
+        - p, proj:ecotrack:readonly, applications, get, ecotrack/*, allow
+        - p, proj:ecotrack:readonly, repositories, get, *, allow
+        - p, proj:ecotrack:readonly, logs, get, ecotrack/*, allow
+      groups:
+        - ecotrack:viewer
+        - platform:viewer
+
+    # CI/CD service role - for automated deployments
+    - name: cicd-service
+      description: Service account access for CI/CD pipelines
+      policies:
+        - p, proj:ecotrack:cicd-service, applications, get, ecotrack/*, allow
+        - p, proj:ecotrack:cicd-service, applications, sync, ecotrack/*, allow
+        - p, proj:ecotrack:cicd-service, applications, action/*, ecotrack/*, allow
+        - p, proj:ecotrack:cicd-service, repositories, get, *, allow
+      groups:
+        - system:tekton-pipeline
+
+  # Sync windows for controlled deployments
+  syncWindows:
+    # Production deployment window
+    - kind: allow
+      schedule: '0 9-17 * * MON-FRI'  # 9 AM to 5 PM, Monday to Friday
+      duration: 8h
+      applications:
+        - 'ecotrack-*-prod'
+      manualSync: true
+      timeZone: 'America/New_York'
+    
+    # Staging deployment window
+    - kind: allow
+      schedule: '0 8-18 * * MON-FRI'  # 8 AM to 6 PM, Monday to Friday
+      duration: 10h
+      applications:
+        - 'ecotrack-*-staging'
+      manualSync: false
+      timeZone: 'America/New_York'
+    
+    # Development - always allowed
+    - kind: allow
+      schedule: '* * * * *'  # Always
+      duration: 24h
+      applications:
+        - 'ecotrack-*-dev'
+      manualSync: false
+
+  # Orphaned resources monitoring
+  orphanedResources:
+    warn: true
+    ignore:
+      # Ignore system-generated resources
+      - group: ''
+        kind: Secret
+        name: '*-token-*'
+      - group: ''
+        kind: ConfigMap
+        name: 'kube-root-ca.crt'
+      # Ignore monitoring resources that might be created externally
+      - group: 'monitoring.coreos.com'
+        kind: ServiceMonitor
+        name: '*-metrics'
+
+  # Signature keys for signed commits (if using signed commits)
+  signatureKeys:
+    - keyID: "${GPG_KEY_ID}"
+
+  # Project-level sync policy defaults
+  syncPolicy:
+    # Automatically create namespace if it doesn't exist
+    syncOptions:
+      - CreateNamespace=true
+    
+    # Automatic pruning of resources
+    automated:
+      prune: true
+      selfHeal: true

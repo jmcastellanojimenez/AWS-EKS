@@ -1,0 +1,229 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: build-java-app
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.17.0"
+    tekton.dev/categories: Build Tools
+    tekton.dev/tags: java, maven, graalvm, native-image
+    tekton.dev/displayName: "Java Application Build"
+    tekton.dev/platforms: "linux/amd64,linux/arm64"
+spec:
+  description: >-
+    This task builds Java applications using Maven with optional GraalVM native image compilation.
+    It supports both traditional JVM builds and native image compilation for faster startup times.
+  
+  params:
+    - name: IMAGE
+      description: Reference of the image to build
+      type: string
+    - name: CONTEXT
+      description: Path to the build context
+      type: string
+      default: "."
+    - name: DOCKERFILE
+      description: Path to the Dockerfile
+      type: string
+      default: "./Dockerfile"
+    - name: BUILD_ARGS
+      description: Build arguments for Docker build
+      type: array
+      default: []
+    - name: MAVEN_GOALS
+      description: Maven goals to execute
+      type: string
+      default: "clean package"
+    - name: MAVEN_OPTIONS
+      description: Additional Maven options
+      type: string
+      default: "-DskipTests"
+    - name: ENABLE_NATIVE_BUILD
+      description: Enable GraalVM native image compilation
+      type: string
+      default: "false"
+    - name: NATIVE_BUILD_ARGS
+      description: Additional arguments for native build
+      type: string
+      default: "--no-fallback --enable-preview"
+    - name: JAVA_VERSION
+      description: Java version to use (11, 17, 21)
+      type: string
+      default: "17"
+    - name: REGISTRY_URL
+      description: Container registry URL
+      type: string
+      default: ""
+    - name: PUSH_IMAGE
+      description: Whether to push the built image
+      type: string
+      default: "true"
+
+  workspaces:
+    - name: source
+      description: The git repository source
+    - name: cache
+      description: Maven cache directory
+      optional: true
+
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the built image
+    - name: IMAGE_URL
+      description: URL of the built image
+    - name: BUILD_TYPE
+      description: Type of build (jvm or native)
+
+  steps:
+    - name: setup-environment
+      image: eclipse-temurin:$(params.JAVA_VERSION)-jdk
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "Setting up build environment..."
+        echo "Java Version: $(params.JAVA_VERSION)"
+        echo "Enable Native Build: $(params.ENABLE_NATIVE_BUILD)"
+        
+        # Display Java version
+        java -version
+        
+        # Check if GraalVM native-image is needed
+        if [ "$(params.ENABLE_NATIVE_BUILD)" = "true" ]; then
+          echo "Native build enabled - will use GraalVM"
+          echo "native" | tee $(results.BUILD_TYPE.path)
+        else
+          echo "JVM build mode"
+          echo "jvm" | tee $(results.BUILD_TYPE.path)
+        fi
+
+    - name: maven-build
+      image: eclipse-temurin:$(params.JAVA_VERSION)-jdk
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      env:
+        - name: MAVEN_OPTS
+          value: "-Dmaven.repo.local=$(workspaces.cache.path)/.m2/repository"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "Starting Maven build..."
+        
+        # Install Maven if not present
+        if ! command -v mvn &> /dev/null; then
+          echo "Installing Maven..."
+          apt-get update && apt-get install -y maven
+        fi
+        
+        # Run Maven build
+        echo "Executing: mvn $(params.MAVEN_GOALS) $(params.MAVEN_OPTIONS)"
+        mvn $(params.MAVEN_GOALS) $(params.MAVEN_OPTIONS)
+        
+        echo "Maven build completed successfully"
+
+    - name: native-build
+      image: ghcr.io/graalvm/graalvm-ce:java$(params.JAVA_VERSION)
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      when:
+        - input: "$(params.ENABLE_NATIVE_BUILD)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      env:
+        - name: MAVEN_OPTS
+          value: "-Dmaven.repo.local=$(workspaces.cache.path)/.m2/repository"
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "Starting GraalVM native image build..."
+        
+        # Install native-image component
+        gu install native-image
+        
+        # Build native image
+        echo "Building native image with args: $(params.NATIVE_BUILD_ARGS)"
+        mvn clean package -Pnative $(params.NATIVE_BUILD_ARGS) $(params.MAVEN_OPTIONS)
+        
+        echo "Native image build completed successfully"
+
+    - name: build-image
+      image: gcr.io/kaniko-project/executor:v1.19.2
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      script: |
+        #!/busybox/sh
+        set -e
+        
+        echo "Building container image..."
+        
+        # Prepare build arguments
+        BUILD_ARGS=""
+        for arg in $(params.BUILD_ARGS[*]); do
+          BUILD_ARGS="${BUILD_ARGS} --build-arg ${arg}"
+        done
+        
+        # Set destination registry
+        if [ -n "$(params.REGISTRY_URL)" ]; then
+          DESTINATION="$(params.REGISTRY_URL)/$(params.IMAGE)"
+        else
+          DESTINATION="$(params.IMAGE)"
+        fi
+        
+        echo "Building image: ${DESTINATION}"
+        
+        # Build with Kaniko
+        /kaniko/executor \
+          --context=. \
+          --dockerfile=$(params.DOCKERFILE) \
+          --destination=${DESTINATION} \
+          --digest-file=/tekton/results/IMAGE_DIGEST \
+          --oci-layout-path=/tmp/image-layout \
+          --cache=true \
+          --cache-copy-layers \
+          --snapshot-mode=redo \
+          ${BUILD_ARGS}
+        
+        # Save image URL
+        echo -n "${DESTINATION}" | tee $(results.IMAGE_URL.path)
+        
+        echo "Container image build completed successfully"
+
+    - name: security-scan
+      image: aquasec/trivy:latest
+      workingDir: $(workspaces.source.path)/$(params.CONTEXT)
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Running security scan on built image..."
+        
+        # Get image URL from previous step
+        IMAGE_URL=$(cat $(results.IMAGE_URL.path))
+        
+        # Run Trivy security scan
+        trivy image \
+          --format table \
+          --exit-code 0 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          "${IMAGE_URL}"
+        
+        echo "Security scan completed"
+
+    - name: push-image
+      image: gcr.io/google.com/cloudsdktool/cloud-sdk:alpine
+      when:
+        - input: "$(params.PUSH_IMAGE)"
+          operator: in
+          values: ["true", "True", "TRUE"]
+      script: |
+        #!/bin/sh
+        set -e
+        
+        echo "Image push is handled by Kaniko in the build-image step"
+        echo "Image successfully pushed to registry"
