@@ -89,7 +89,7 @@ module "external_dns" {
   dns_provider             = var.dns_provider
   domain_filters           = var.domain_filters
   cloudflare_api_token     = var.cloudflare_api_token
-  service_account_role_arn = var.external_dns_role_arn != "" ? var.external_dns_role_arn : module.iam_irsa.external_dns_role_arn
+  service_account_role_arn = var.external_dns_role_arn
   enable_monitoring        = var.enable_monitoring
 
   depends_on = [

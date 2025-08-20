@@ -138,3 +138,281 @@ variable "postgres_backup_secret_key" {
   sensitive   = true
   default     = ""
 }
+
+# Ingress Stack Variables
+variable "ingress_domain" {
+  description = "Domain for ingress configuration"
+  type        = string
+  default     = ""
+}
+
+variable "cert_manager_version" {
+  description = "cert-manager version"
+  type        = string
+  default     = "v1.13.0"
+}
+
+variable "enable_letsencrypt" {
+  description = "Enable Let's Encrypt certificates"
+  type        = bool
+  default     = true
+}
+
+variable "enable_monitoring" {
+  description = "Enable monitoring for components"
+  type        = bool
+  default     = true
+}
+
+variable "external_dns_version" {
+  description = "external-dns version"
+  type        = string
+  default     = "6.28.6"
+}
+
+variable "dns_provider" {
+  description = "DNS provider for external-dns"
+  type        = string
+  default     = "cloudflare"
+}
+
+variable "domain_filters" {
+  description = "Domain filters for external-dns"
+  type        = list(string)
+  default     = []
+}
+
+variable "external_dns_role_arn" {
+  description = "External DNS IAM role ARN"
+  type        = string
+  default     = ""
+}
+
+variable "ambassador_version" {
+  description = "Ambassador version"
+  type        = string
+  default     = "8.9.1"
+}
+
+variable "ambassador_replica_count" {
+  description = "Number of Ambassador replicas"
+  type        = number
+  default     = 2
+}
+
+variable "load_balancer_scheme" {
+  description = "Load balancer scheme"
+  type        = string
+  default     = "internet-facing"
+}
+
+variable "enable_tls" {
+  description = "Enable TLS for Ambassador"
+  type        = bool
+  default     = true
+}
+
+variable "cors_origins" {
+  description = "CORS origins for Ambassador"
+  type        = list(string)
+  default     = ["*"]
+}
+
+# LGTM Observability Variables
+variable "observability_namespace" {
+  description = "Namespace for observability components"
+  type        = string
+  default     = "observability"
+}
+
+variable "grafana_domain" {
+  description = "Grafana domain"
+  type        = string
+  default     = ""
+}
+
+variable "enable_grafana_alerts" {
+  description = "Enable Grafana alerts"
+  type        = bool
+  default     = true
+}
+
+variable "enable_prometheus" {
+  description = "Enable Prometheus"
+  type        = bool
+  default     = true
+}
+
+variable "enable_mimir" {
+  description = "Enable Mimir"
+  type        = bool
+  default     = false
+}
+
+variable "enable_loki" {
+  description = "Enable Loki"
+  type        = bool
+  default     = true
+}
+
+variable "enable_tempo" {
+  description = "Enable Tempo"
+  type        = bool
+  default     = true
+}
+
+variable "prometheus_resources" {
+  description = "Resource limits for Prometheus"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "100m"
+      memory = "128Mi"
+    }
+    limits = {
+      cpu    = "500m"
+      memory = "512Mi"
+    }
+  }
+}
+
+variable "grafana_resources" {
+  description = "Resource limits for Grafana"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "100m"
+      memory = "128Mi"
+    }
+    limits = {
+      cpu    = "200m"
+      memory = "256Mi"
+    }
+  }
+}
+
+variable "mimir_resources" {
+  description = "Resource limits for Mimir"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "100m"
+      memory = "128Mi"
+    }
+    limits = {
+      cpu    = "500m"
+      memory = "512Mi"
+    }
+  }
+}
+
+variable "loki_resources" {
+  description = "Resource limits for Loki"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "100m"
+      memory = "128Mi"
+    }
+    limits = {
+      cpu    = "500m"
+      memory = "512Mi"
+    }
+  }
+}
+
+variable "tempo_resources" {
+  description = "Resource limits for Tempo"
+  type = object({
+    requests = object({
+      cpu    = string
+      memory = string
+    })
+    limits = object({
+      cpu    = string
+      memory = string
+    })
+  })
+  default = {
+    requests = {
+      cpu    = "100m"
+      memory = "128Mi"
+    }
+    limits = {
+      cpu    = "500m"
+      memory = "512Mi"
+    }
+  }
+}
+
+variable "prometheus_storage_size" {
+  description = "Storage size for Prometheus"
+  type        = string
+  default     = "10Gi"
+}
+
+variable "grafana_storage_size" {
+  description = "Storage size for Grafana"
+  type        = string
+  default     = "5Gi"
+}
+
+variable "prometheus_retention" {
+  description = "Prometheus retention period"
+  type        = string
+  default     = "15d"
+}
+
+variable "s3_lifecycle_enabled" {
+  description = "Enable S3 lifecycle for observability"
+  type        = bool
+  default     = true
+}
+
+variable "s3_transition_days" {
+  description = "Days before transitioning to IA storage"
+  type        = number
+  default     = 30
+}
+
+variable "s3_expiration_days" {
+  description = "Days before expiring objects"
+  type        = number
+  default     = 365
+}
