@@ -254,16 +254,52 @@ resource "helm_release" "tekton_triggers" {
   depends_on = [helm_release.tekton_pipelines]
 }
 
+# Verify ArgoCD CRDs are available
+resource "null_resource" "verify_argocd_crds" {
+  triggers = {
+    argocd_version = var.argocd_version
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      kubectl wait --for condition=established --timeout=300s crd/applications.argoproj.io || true
+      kubectl wait --for condition=established --timeout=300s crd/applicationsets.argoproj.io || true
+      sleep 30
+    EOT
+  }
+
+  depends_on = [helm_release.argocd]
+}
+
+# Verify Tekton CRDs are available
+resource "null_resource" "verify_tekton_crds" {
+  triggers = {
+    tekton_version = var.tekton_version
+    triggers_version = var.tekton_triggers_version
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      kubectl wait --for condition=established --timeout=300s crd/pipelines.tekton.dev || true
+      kubectl wait --for condition=established --timeout=300s crd/tasks.tekton.dev || true
+      kubectl wait --for condition=established --timeout=300s crd/eventlisteners.triggers.tekton.dev || true
+      sleep 30
+    EOT
+  }
+
+  depends_on = [helm_release.tekton_pipelines, helm_release.tekton_triggers]
+}
+
 # Wait for ArgoCD CRDs to be available
 resource "time_sleep" "wait_for_argocd_crds" {
-  depends_on      = [helm_release.argocd]
-  create_duration = "60s"
+  depends_on      = [null_resource.verify_argocd_crds]
+  create_duration = "30s"
 }
 
 # Wait for Tekton CRDs to be available
 resource "time_sleep" "wait_for_tekton_crds" {
-  depends_on      = [helm_release.tekton_pipelines, helm_release.tekton_triggers]
-  create_duration = "60s"
+  depends_on      = [null_resource.verify_tekton_crds]
+  create_duration = "30s"
 }
 
 # ArgoCD Application of Applications
@@ -299,6 +335,17 @@ resource "kubernetes_manifest" "app_of_apps" {
     }
   }
 
+  # Wait for the CRD to be available before applying
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  # Enable server-side apply to handle CRD timing issues
+  computed_fields = ["metadata.labels", "metadata.annotations"]
+  
   depends_on = [time_sleep.wait_for_argocd_crds]
 }
 
@@ -407,6 +454,17 @@ resource "kubernetes_manifest" "build_pipeline" {
     }
   }
 
+  # Wait for the CRD to be available before applying
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  # Enable server-side apply to handle CRD timing issues
+  computed_fields = ["metadata.labels", "metadata.annotations"]
+  
   depends_on = [time_sleep.wait_for_tekton_crds]
 }
 
@@ -451,6 +509,17 @@ resource "kubernetes_manifest" "trivy_task" {
     }
   }
 
+  # Wait for the CRD to be available before applying
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  # Enable server-side apply to handle CRD timing issues
+  computed_fields = ["metadata.labels", "metadata.annotations"]
+  
   depends_on = [time_sleep.wait_for_tekton_crds]
 }
 
@@ -503,5 +572,16 @@ resource "kubernetes_manifest" "github_eventlistener" {
     }
   }
 
+  # Wait for the CRD to be available before applying
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  # Enable server-side apply to handle CRD timing issues
+  computed_fields = ["metadata.labels", "metadata.annotations"]
+  
   depends_on = [time_sleep.wait_for_tekton_crds]
 }
