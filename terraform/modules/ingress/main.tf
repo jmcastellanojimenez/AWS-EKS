@@ -57,12 +57,12 @@ resource "helm_release" "cert_manager" {
 
   set {
     name  = "prometheus.enabled"
-    value = "true"
+    value = "false"
   }
 
   set {
     name  = "prometheus.servicemonitor.enabled"
-    value = "true"
+    value = "false"
   }
 
   values = [
@@ -200,7 +200,7 @@ resource "helm_release" "external_dns" {
       }
 
       serviceMonitor = {
-        enabled = true
+        enabled = false
       }
 
       metrics = {
@@ -220,9 +220,18 @@ resource "helm_release" "ambassador" {
   version    = var.ambassador_version
   namespace  = kubernetes_namespace.ingress.metadata[0].name
 
+  # Wait for CRDs to be installed first
+  skip_crds = false
+  wait      = true
+  timeout   = 600
+
   values = [
     yamlencode({
       replicaCount = var.ambassador_replica_count
+
+      # Disable default module creation to avoid CRD issues
+      createDefaultListeners  = false
+      createDevPortalMappings = false
 
       service = {
         type = "LoadBalancer"
@@ -261,11 +270,11 @@ resource "helm_release" "ambassador" {
       }
 
       serviceMonitor = {
-        enabled = true
+        enabled = false
       }
 
       prometheusExporter = {
-        enabled = true
+        enabled = false
       }
     })
   ]

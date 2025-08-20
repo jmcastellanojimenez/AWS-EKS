@@ -51,7 +51,7 @@ output "ambassador_module_applied" {
 }
 
 output "ambassador_host_applied" {
-  description = "Ambassador host configuration applied" 
+  description = "Ambassador host configuration applied"
   value       = null_resource.ambassador_host.id != null
 }
 
