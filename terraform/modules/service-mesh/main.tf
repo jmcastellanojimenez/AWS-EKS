@@ -212,7 +212,13 @@ resource "helm_release" "istio_gateway" {
     })
   ]
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
+}
+
+# Wait for Istio CRDs to be available
+resource "time_sleep" "wait_for_istio_crds" {
+  depends_on      = [helm_release.istiod]
+  create_duration = "60s"
 }
 
 # Default Gateway for applications
@@ -256,7 +262,7 @@ resource "kubernetes_manifest" "default_gateway" {
     }
   }
 
-  depends_on = [helm_release.istio_gateway]
+  depends_on = [time_sleep.wait_for_istio_crds, helm_release.istio_gateway]
 }
 
 # Default PeerAuthentication for mTLS
@@ -275,7 +281,7 @@ resource "kubernetes_manifest" "default_peer_authentication" {
     }
   }
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
 }
 
 # Default DestinationRule for mTLS
@@ -297,7 +303,7 @@ resource "kubernetes_manifest" "default_destination_rule" {
     }
   }
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
 }
 
 # Telemetry configuration for observability
@@ -352,7 +358,7 @@ resource "kubernetes_manifest" "telemetry_v2" {
     }
   }
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
 }
 
 # Service Monitor for Istio metrics
@@ -382,7 +388,7 @@ resource "kubernetes_manifest" "istio_service_monitor" {
     }
   }
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
 }
 
 # Service Monitor for Istio Gateway
@@ -412,7 +418,7 @@ resource "kubernetes_manifest" "istio_gateway_service_monitor" {
     }
   }
 
-  depends_on = [helm_release.istio_gateway]
+  depends_on = [time_sleep.wait_for_istio_crds, helm_release.istio_gateway]
 }
 
 # Kiali for service mesh observability (optional)
@@ -466,7 +472,7 @@ resource "helm_release" "kiali" {
     })
   ]
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
 }
 
 # Jaeger for distributed tracing (optional, if not using Tempo)
@@ -518,5 +524,5 @@ resource "helm_release" "jaeger" {
     })
   ]
 
-  depends_on = [helm_release.istiod]
+  depends_on = [time_sleep.wait_for_istio_crds]
 }

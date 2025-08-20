@@ -69,6 +69,12 @@ resource "helm_release" "cloudnative_pg" {
   depends_on = [kubernetes_namespace.data_services]
 }
 
+# Wait for CloudNativePG CRDs to be available
+resource "time_sleep" "wait_for_cnpg_crds" {
+  depends_on      = [helm_release.cloudnative_pg]
+  create_duration = "60s"
+}
+
 # PostgreSQL Cluster
 resource "kubernetes_manifest" "postgres_cluster" {
   manifest = {
@@ -159,7 +165,7 @@ resource "kubernetes_manifest" "postgres_cluster" {
     }
   }
 
-  depends_on = [helm_release.cloudnative_pg]
+  depends_on = [time_sleep.wait_for_cnpg_crds]
 }
 
 # PostgreSQL credentials secret
@@ -226,6 +232,12 @@ resource "helm_release" "redis_operator" {
   depends_on = [kubernetes_namespace.data_services]
 }
 
+# Wait for Redis operator CRDs to be available
+resource "time_sleep" "wait_for_redis_crds" {
+  depends_on      = [helm_release.redis_operator]
+  create_duration = "60s"
+}
+
 # Redis Failover Cluster
 resource "kubernetes_manifest" "redis_failover" {
   manifest = {
@@ -285,7 +297,7 @@ resource "kubernetes_manifest" "redis_failover" {
     }
   }
 
-  depends_on = [helm_release.redis_operator]
+  depends_on = [time_sleep.wait_for_redis_crds]
 }
 
 # Strimzi Kafka Operator
@@ -341,6 +353,12 @@ resource "helm_release" "strimzi_kafka" {
   ]
 
   depends_on = [kubernetes_namespace.data_services]
+}
+
+# Wait for Strimzi Kafka operator CRDs to be available
+resource "time_sleep" "wait_for_kafka_crds" {
+  depends_on      = [helm_release.strimzi_kafka]
+  create_duration = "60s"
 }
 
 # Kafka Cluster
@@ -508,7 +526,7 @@ resource "kubernetes_manifest" "kafka_cluster" {
   }
 
   depends_on = [
-    helm_release.strimzi_kafka,
+    time_sleep.wait_for_kafka_crds,
     kubernetes_config_map.kafka_metrics
   ]
 }

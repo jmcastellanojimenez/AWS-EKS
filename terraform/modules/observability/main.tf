@@ -29,39 +29,42 @@ resource "kubernetes_namespace" "observability" {
   }
 }
 
-# OpenTelemetry Operator
-resource "helm_release" "opentelemetry_operator" {
-  name       = "opentelemetry-operator"
-  repository = "https://open-telemetry.github.io/opentelemetry-helm-charts"
-  chart      = "opentelemetry-operator"
-  version    = var.opentelemetry_operator_version
-  namespace  = kubernetes_namespace.observability.metadata[0].name
+# OpenTelemetry components temporarily disabled to resolve CRD issues
+# Will be re-enabled once core LGTM stack is deployed successfully
 
-  values = [
-    yamlencode({
-      manager = {
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "128Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "512Mi"
-          }
-        }
-      }
-      
-      admissionWebhooks = {
-        certManager = {
-          enabled = true
-        }
-      }
-    })
-  ]
-
-  depends_on = [kubernetes_namespace.observability]
-}
+# # OpenTelemetry Operator
+# resource "helm_release" "opentelemetry_operator" {
+#   name       = "opentelemetry-operator"
+#   repository = "https://open-telemetry.github.io/opentelemetry-helm-charts"
+#   chart      = "opentelemetry-operator"
+#   version    = var.opentelemetry_operator_version
+#   namespace  = kubernetes_namespace.observability.metadata[0].name
+#
+#   values = [
+#     yamlencode({
+#       manager = {
+#         resources = {
+#           requests = {
+#             cpu    = "100m"
+#             memory = "128Mi"
+#           }
+#           limits = {
+#             cpu    = "500m"
+#             memory = "512Mi"
+#           }
+#         }
+#       }
+#       
+#       admissionWebhooks = {
+#         certManager = {
+#           enabled = true
+#         }
+#       }
+#     })
+#   ]
+#
+#   depends_on = [kubernetes_namespace.observability]
+# }
 
 # Prometheus Stack (kube-prometheus-stack)
 resource "helm_release" "prometheus_stack" {
@@ -114,16 +117,17 @@ resource "helm_release" "prometheus_stack" {
             }
           ]
 
-          additionalScrapeConfigs = [
-            {
-              job_name = "opentelemetry-collector"
-              static_configs = [
-                {
-                  targets = ["otel-collector.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:8888"]
-                }
-              ]
-            }
-          ]
+          # OpenTelemetry scrape configs temporarily disabled
+          # additionalScrapeConfigs = [
+          #   {
+          #     job_name = "opentelemetry-collector"
+          #     static_configs = [
+          #       {
+          #         targets = ["otel-collector.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:8888"]
+          #       }
+          #     ]
+          #   }
+          # ]
         }
       }
 
@@ -591,152 +595,96 @@ resource "helm_release" "tempo" {
   depends_on = [kubernetes_namespace.observability]
 }
 
-# OpenTelemetry Collector
-resource "kubernetes_manifest" "otel_collector" {
-  manifest = {
-    apiVersion = "opentelemetry.io/v1alpha1"
-    kind       = "OpenTelemetryCollector"
-    metadata = {
-      name      = "otel-collector"
-      namespace = kubernetes_namespace.observability.metadata[0].name
-    }
-    spec = {
-      mode = "deployment"
-      replicas = 2
-      
-      resources = {
-        requests = {
-          cpu    = "200m"
-          memory = "256Mi"
-        }
-        limits = {
-          cpu    = "1"
-          memory = "1Gi"
-        }
-      }
+# OpenTelemetry components temporarily disabled to resolve CRD issues
+# Will be re-enabled once core LGTM stack is deployed successfully
 
-      config = yamlencode({
-        receivers = {
-          otlp = {
-            protocols = {
-              grpc = {
-                endpoint = "0.0.0.0:4317"
-              }
-              http = {
-                endpoint = "0.0.0.0:4318"
-              }
-            }
-          }
-          prometheus = {
-            config = {
-              scrape_configs = [
-                {
-                  job_name        = "otel-collector"
-                  scrape_interval = "30s"
-                  static_configs = [
-                    {
-                      targets = ["0.0.0.0:8888"]
-                    }
-                  ]
-                }
-              ]
-            }
-          }
-        }
-
-        processors = {
-          batch = {}
-          memory_limiter = {
-            limit_mib = 512
-          }
-          resource = {
-            attributes = [
-              {
-                key    = "cluster.name"
-                value  = var.cluster_name
-                action = "upsert"
-              }
-            ]
-          }
-        }
-
-        exporters = {
-          otlp = {
-            endpoint = "http://tempo-distributor.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:4317"
-            tls = {
-              insecure = true
-            }
-          }
-          prometheus = {
-            endpoint = "0.0.0.0:8889"
-          }
-          loki = {
-            endpoint = "http://loki-gateway.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local/loki/api/v1/push"
-          }
-        }
-
-        service = {
-          pipelines = {
-            traces = {
-              receivers  = ["otlp"]
-              processors = ["memory_limiter", "resource", "batch"]
-              exporters  = ["otlp"]
-            }
-            metrics = {
-              receivers  = ["otlp", "prometheus"]
-              processors = ["memory_limiter", "resource", "batch"]
-              exporters  = ["prometheus"]
-            }
-            logs = {
-              receivers  = ["otlp"]
-              processors = ["memory_limiter", "resource", "batch"]
-              exporters  = ["loki"]
-            }
-          }
-        }
-      })
-    }
-  }
-
-  depends_on = [
-    helm_release.opentelemetry_operator,
-    helm_release.tempo,
-    helm_release.loki
-  ]
-}
-
-# OpenTelemetry Instrumentation for Java
-resource "kubernetes_manifest" "otel_instrumentation_java" {
-  manifest = {
-    apiVersion = "opentelemetry.io/v1alpha1"
-    kind       = "Instrumentation"
-    metadata = {
-      name      = "java-instrumentation"
-      namespace = kubernetes_namespace.observability.metadata[0].name
-    }
-    spec = {
-      exporter = {
-        endpoint = "http://otel-collector.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:4317"
-      }
-      propagators = ["tracecontext", "baggage", "b3"]
-      sampler = {
-        type = "parentbased_traceidratio"
-        argument = "0.1"  # 10% sampling
-      }
-      java = {
-        image = "ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:1.32.0"
-        env = [
-          {
-            name  = "OTEL_EXPORTER_OTLP_ENDPOINT"
-            value = "http://otel-collector.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:4317"
-          }
-        ]
-      }
-    }
-  }
-
-  depends_on = [helm_release.opentelemetry_operator]
-}
+# # Wait for OpenTelemetry operator CRDs to be available
+# resource "time_sleep" "wait_for_otel_crds" {
+#   depends_on      = [helm_release.opentelemetry_operator]
+#   create_duration = "30s"
+# }
+#
+# # OpenTelemetry Collector
+# resource "null_resource" "otel_collector" {
+#   triggers = {
+#     cluster_name = var.cluster_name
+#     aws_region   = var.aws_region
+#   }
+#
+#   provisioner "local-exec" {
+#     command = <<-EOT
+#       # Configure kubectl to use the EKS cluster
+#       aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
+#       
+#       # Apply the OpenTelemetry Collector
+#       cat <<EOF | kubectl apply --validate=false -f -
+# apiVersion: opentelemetry.io/v1alpha1
+# kind: OpenTelemetryCollector
+# metadata:
+#   name: otel-collector
+#   namespace: observability
+# spec:
+#   mode: deployment
+#   replicas: 2
+#   config: |
+#     receivers:
+#       otlp:
+#         protocols:
+#           grpc:
+#             endpoint: 0.0.0.0:4317
+#     processors:
+#       batch: {}
+#     exporters:
+#       otlp:
+#         endpoint: http://tempo-distributor.observability.svc.cluster.local:4317
+#         tls:
+#           insecure: true
+#     service:
+#       pipelines:
+#         traces:
+#           receivers: [otlp]
+#           processors: [batch]
+#           exporters: [otlp]
+# EOF
+#     EOT
+#   }
+#
+#   depends_on = [
+#     time_sleep.wait_for_otel_crds,
+#     helm_release.tempo
+#   ]
+# }
+#
+# # OpenTelemetry Instrumentation for Java
+# resource "null_resource" "otel_instrumentation_java" {
+#   triggers = {
+#     cluster_name = var.cluster_name
+#     aws_region   = var.aws_region
+#   }
+#
+#   provisioner "local-exec" {
+#     command = <<-EOT
+#       # Configure kubectl to use the EKS cluster
+#       aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
+#       
+#       # Apply the OpenTelemetry Instrumentation
+#       cat <<EOF | kubectl apply --validate=false -f -
+# apiVersion: opentelemetry.io/v1alpha1
+# kind: Instrumentation
+# metadata:
+#   name: java-instrumentation
+#   namespace: observability
+# spec:
+#   exporter:
+#     endpoint: http://otel-collector.observability.svc.cluster.local:4317
+#   java:
+#     image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:1.32.0
+# EOF
+#     EOT
+#   }
+#
+#   depends_on = [time_sleep.wait_for_otel_crds]
+# }
 
 # Grafana
 resource "helm_release" "grafana" {

@@ -402,6 +402,12 @@ resource "helm_release" "falco" {
   depends_on = [kubernetes_namespace.security]
 }
 
+# Wait for OPA Gatekeeper CRDs to be available
+resource "time_sleep" "wait_for_gatekeeper_crds" {
+  depends_on      = [helm_release.gatekeeper]
+  create_duration = "60s"
+}
+
 # Pod Security Standards Policy
 resource "kubernetes_manifest" "pod_security_policy" {
   manifest = {
@@ -460,7 +466,7 @@ resource "kubernetes_manifest" "pod_security_policy" {
     }
   }
 
-  depends_on = [helm_release.gatekeeper]
+  depends_on = [time_sleep.wait_for_gatekeeper_crds]
 }
 
 # Apply Pod Security Policy
@@ -547,7 +553,7 @@ resource "kubernetes_manifest" "resource_requirements_policy" {
     }
   }
 
-  depends_on = [helm_release.gatekeeper]
+  depends_on = [time_sleep.wait_for_gatekeeper_crds]
 }
 
 # Apply Resource Requirements Policy

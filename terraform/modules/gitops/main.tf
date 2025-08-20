@@ -251,7 +251,19 @@ resource "helm_release" "tekton_triggers" {
     })
   ]
 
-  depends_on = [helm_release.tekton_pipelines]
+  depends_on = [time_sleep.wait_for_tekton_crds]
+}
+
+# Wait for ArgoCD CRDs to be available
+resource "time_sleep" "wait_for_argocd_crds" {
+  depends_on      = [helm_release.argocd]
+  create_duration = "60s"
+}
+
+# Wait for Tekton CRDs to be available
+resource "time_sleep" "wait_for_tekton_crds" {
+  depends_on      = [helm_release.tekton_pipelines, helm_release.tekton_triggers]
+  create_duration = "60s"
 }
 
 # ArgoCD Application of Applications
@@ -287,7 +299,7 @@ resource "kubernetes_manifest" "app_of_apps" {
     }
   }
 
-  depends_on = [helm_release.argocd]
+  depends_on = [time_sleep.wait_for_argocd_crds]
 }
 
 # Tekton Pipeline for container builds
@@ -395,7 +407,7 @@ resource "kubernetes_manifest" "build_pipeline" {
     }
   }
 
-  depends_on = [helm_release.tekton_pipelines]
+  depends_on = [time_sleep.wait_for_tekton_crds]
 }
 
 # Trivy security scanner task
@@ -439,7 +451,7 @@ resource "kubernetes_manifest" "trivy_task" {
     }
   }
 
-  depends_on = [helm_release.tekton_pipelines]
+  depends_on = [time_sleep.wait_for_tekton_crds]
 }
 
 # GitHub webhook EventListener
@@ -491,5 +503,5 @@ resource "kubernetes_manifest" "github_eventlistener" {
     }
   }
 
-  depends_on = [helm_release.tekton_triggers]
+  depends_on = [time_sleep.wait_for_tekton_crds]
 }
