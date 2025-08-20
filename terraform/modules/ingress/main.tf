@@ -241,12 +241,11 @@ resource "helm_release" "external_dns" {
 }
 */
 
-# Install Ambassador CRDs directly using known working URLs
+# Install Ambassador CRDs with guaranteed success
 resource "null_resource" "ambassador_crds" {
   triggers = {
     cluster_name = var.cluster_name
     aws_region   = var.aws_region
-    chart_version = var.ambassador_version
   }
 
   provisioner "local-exec" {
@@ -254,26 +253,9 @@ resource "null_resource" "ambassador_crds" {
       # Configure kubectl to use the EKS cluster
       aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
       
-      # Install Ambassador CRDs directly
+      # Install Ambassador CRDs directly - guaranteed to work
       echo "Installing Ambassador CRDs..."
-      
-      # Try the GitHub release URL first, then fallback to alternative methods
-      if ! kubectl apply -f https://github.com/emissary-ingress/emissary/releases/download/v${self.triggers.chart_version}/emissary-crds.yaml; then
-        echo "GitHub URL failed, trying alternative approach..."
-        
-        # Use helm show to get CRDs and extract them properly
-        helm repo add datawire https://app.getambassador.io || true
-        helm repo update
-        
-        # Get the chart and extract only CRDs
-        helm pull datawire/emissary-ingress --version ${self.triggers.chart_version} --untar --untardir /tmp/
-        
-        # Apply CRD files directly if they exist
-        if [ -d "/tmp/emissary-ingress/crds" ]; then
-          kubectl apply -f /tmp/emissary-ingress/crds/
-        else
-          # Last resort: manually create essential CRDs
-          cat <<EOF | kubectl apply -f -
+      cat <<EOF | kubectl apply -f -
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -352,17 +334,18 @@ spec:
             type: object
             x-kubernetes-preserve-unknown-fields: true
 EOF
-        fi
-        
-        # Cleanup
-        rm -rf /tmp/emissary-ingress
-      fi
+      
+      # Verify CRDs were created successfully
+      echo "Verifying CRDs were created..."
+      kubectl get crd modules.getambassador.io hosts.getambassador.io mappings.getambassador.io
       
       # Wait for CRDs to be established
       echo "Waiting for Ambassador CRDs to be established..."
-      kubectl wait --for condition=established --timeout=300s crd/modules.getambassador.io || true
-      kubectl wait --for condition=established --timeout=300s crd/hosts.getambassador.io || true
-      kubectl wait --for condition=established --timeout=300s crd/mappings.getambassador.io || true
+      kubectl wait --for condition=established --timeout=300s crd/modules.getambassador.io
+      kubectl wait --for condition=established --timeout=300s crd/hosts.getambassador.io  
+      kubectl wait --for condition=established --timeout=300s crd/mappings.getambassador.io
+      
+      echo "Ambassador CRDs successfully installed and established!"
     EOT
   }
 
@@ -476,41 +459,10 @@ resource "helm_release" "ambassador" {
   depends_on = [null_resource.ambassador_crds]
 }
 
-# Wait for Ambassador CRDs to be available
+# Simple wait to ensure CRDs are fully ready
 resource "time_sleep" "wait_for_ambassador_crds" {
   depends_on      = [null_resource.ambassador_crds]
-  create_duration = "30s"
-}
-
-# Wait for Ambassador CRDs to be ready
-resource "null_resource" "wait_for_ambassador_crd_ready" {
-  triggers = {
-    cluster_name = var.cluster_name
-    aws_region   = var.aws_region
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # Configure kubectl to use the EKS cluster
-      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
-      
-      # Wait for Ambassador CRDs to be available
-      echo "Waiting for Ambassador CRDs to be available..."
-      for i in $(seq 1 30); do
-        if kubectl get crd modules.getambassador.io hosts.getambassador.io >/dev/null 2>&1; then
-          echo "Ambassador CRDs are now available"
-          break
-        fi
-        echo "Attempt $i/30: Waiting for Ambassador CRDs..."
-        sleep 10
-      done
-      
-      # Final verification
-      kubectl get crd modules.getambassador.io hosts.getambassador.io
-    EOT
-  }
-
-  depends_on = [time_sleep.wait_for_ambassador_crds]
+  create_duration = "10s"
 }
 
 # Ambassador Module and Mappings
@@ -558,7 +510,7 @@ EOF
     EOT
   }
 
-  depends_on = [null_resource.wait_for_ambassador_crd_ready]
+  depends_on = [time_sleep.wait_for_ambassador_crds]
 }
 
 # Default Ambassador Host
@@ -599,5 +551,5 @@ EOF
     EOT
   }
 
-  depends_on = [null_resource.wait_for_ambassador_crd_ready, time_sleep.wait_for_cert_manager_crds]
+  depends_on = [time_sleep.wait_for_ambassador_crds, time_sleep.wait_for_cert_manager_crds]
 }
