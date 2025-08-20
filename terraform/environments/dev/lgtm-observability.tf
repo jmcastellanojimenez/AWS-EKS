@@ -56,6 +56,7 @@ module "lgtm_observability" {
 
   # Component toggles
   enable_prometheus = var.enable_prometheus
+  enable_grafana    = var.enable_grafana
   enable_mimir      = var.enable_mimir
   enable_loki       = var.enable_loki
   enable_tempo      = var.enable_tempo

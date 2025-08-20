@@ -261,6 +261,12 @@ variable "enable_tempo" {
   default     = true
 }
 
+variable "enable_grafana" {
+  description = "Enable Grafana"
+  type        = bool
+  default     = true
+}
+
 variable "prometheus_resources" {
   description = "Resource limits for Prometheus"
   type = object({
