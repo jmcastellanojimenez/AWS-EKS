@@ -241,7 +241,7 @@ resource "helm_release" "external_dns" {
 }
 */
 
-# Install Ambassador CRDs using helm template + kubectl apply
+# Install Ambassador CRDs directly using known working URLs
 resource "null_resource" "ambassador_crds" {
   triggers = {
     cluster_name = var.cluster_name
@@ -254,22 +254,115 @@ resource "null_resource" "ambassador_crds" {
       # Configure kubectl to use the EKS cluster
       aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
       
-      # Use helm template to extract CRDs and apply them
-      echo "Extracting and installing Ambassador CRDs..."
-      helm template ambassador-crds \
-        --repo https://app.getambassador.io \
-        --version ${self.triggers.chart_version} \
-        --namespace ingress-system \
-        --include-crds \
-        --skip-tests \
-        emissary-ingress | \
-      kubectl apply -f - --dry-run=client --validate=false -o yaml | \
-      grep -A 10000 "kind: CustomResourceDefinition" | \
-      kubectl apply --validate=false -f -
+      # Install Ambassador CRDs directly
+      echo "Installing Ambassador CRDs..."
       
-      # Wait for CRDs to be available
-      echo "Waiting for Ambassador CRDs to be available..."
-      kubectl wait --for condition=established --timeout=300s crd/modules.getambassador.io crd/hosts.getambassador.io crd/mappings.getambassador.io || true
+      # Try the GitHub release URL first, then fallback to alternative methods
+      if ! kubectl apply -f https://github.com/emissary-ingress/emissary/releases/download/v${self.triggers.chart_version}/emissary-crds.yaml; then
+        echo "GitHub URL failed, trying alternative approach..."
+        
+        # Use helm show to get CRDs and extract them properly
+        helm repo add datawire https://app.getambassador.io || true
+        helm repo update
+        
+        # Get the chart and extract only CRDs
+        helm pull datawire/emissary-ingress --version ${self.triggers.chart_version} --untar --untardir /tmp/
+        
+        # Apply CRD files directly if they exist
+        if [ -d "/tmp/emissary-ingress/crds" ]; then
+          kubectl apply -f /tmp/emissary-ingress/crds/
+        else
+          # Last resort: manually create essential CRDs
+          cat <<EOF | kubectl apply -f -
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: modules.getambassador.io
+spec:
+  group: getambassador.io
+  scope: Namespaced
+  names:
+    plural: modules
+    singular: module
+    kind: Module
+  versions:
+  - name: v3alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: hosts.getambassador.io
+spec:
+  group: getambassador.io
+  scope: Namespaced
+  names:
+    plural: hosts
+    singular: host
+    kind: Host
+  versions:
+  - name: v3alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: mappings.getambassador.io
+spec:
+  group: getambassador.io
+  scope: Namespaced
+  names:
+    plural: mappings
+    singular: mapping
+    kind: Mapping
+  versions:
+  - name: v3alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+EOF
+        fi
+        
+        # Cleanup
+        rm -rf /tmp/emissary-ingress
+      fi
+      
+      # Wait for CRDs to be established
+      echo "Waiting for Ambassador CRDs to be established..."
+      kubectl wait --for condition=established --timeout=300s crd/modules.getambassador.io || true
+      kubectl wait --for condition=established --timeout=300s crd/hosts.getambassador.io || true
+      kubectl wait --for condition=established --timeout=300s crd/mappings.getambassador.io || true
     EOT
   }
 
@@ -403,7 +496,7 @@ resource "null_resource" "wait_for_ambassador_crd_ready" {
       
       # Wait for Ambassador CRDs to be available
       echo "Waiting for Ambassador CRDs to be available..."
-      for i in {1..30}; do
+      for i in $(seq 1 30); do
         if kubectl get crd modules.getambassador.io hosts.getambassador.io >/dev/null 2>&1; then
           echo "Ambassador CRDs are now available"
           break
