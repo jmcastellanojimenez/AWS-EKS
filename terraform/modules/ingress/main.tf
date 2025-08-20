@@ -454,11 +454,17 @@ resource "helm_release" "ambassador" {
         enabled = false
       }
 
-      # Speed up startup and readiness
-      livenessProbe = {
-        enabled = false
-      }
+      # Enable readiness probe for proper service routing
       readinessProbe = {
+        enabled = true
+        initialDelaySeconds = 30
+        periodSeconds = 10
+        timeoutSeconds = 5
+        failureThreshold = 3
+      }
+      
+      # Keep liveness probe disabled for faster startup
+      livenessProbe = {
         enabled = false
       }
       

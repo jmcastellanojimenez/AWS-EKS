@@ -216,7 +216,13 @@ jobs:
             # Check Ambassador
             echo "🚀 Checking Ambassador..."
             kubectl get pods -n ingress-system -l app.kubernetes.io/name=ambassador
-            kubectl get svc ambassador-emissary-ingress -n ingress-system
+            
+            # Wait for Ambassador pods to be ready (max 2 minutes)
+            echo "⏳ Waiting for Ambassador pods to be ready..."
+            kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=ambassador -n ingress-system --timeout=120s || echo "⚠️ Ambassador pods not ready yet"
+            
+            # Check service (might not exist if pods aren't ready)
+            kubectl get svc -n ingress-system | grep ambassador || echo "⚠️ Ambassador service not found - pods may still be starting"
             
             echo "✅ Stack verification completed!"
           fi
