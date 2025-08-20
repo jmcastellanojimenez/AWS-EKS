@@ -182,8 +182,11 @@ resource "helm_release" "external_dns" {
   namespace  = kubernetes_namespace.ingress.metadata[0].name
 
   # Add timeout and wait configuration
-  wait    = true
-  timeout = 300
+  wait             = true
+  timeout          = 300
+  cleanup_on_fail  = true
+  atomic           = true
+  create_namespace = false
 
   values = [
     yamlencode({
@@ -222,6 +225,13 @@ resource "helm_release" "external_dns" {
       metrics = {
         enabled = true
       }
+
+      # Add more robust settings for external-dns
+      interval = "1m"
+      logLevel = "info"
+
+      # Handle DNS zones more gracefully
+      ignoreHostnameAnnotation = false
     })
   ]
 
@@ -236,16 +246,19 @@ resource "helm_release" "ambassador" {
   version    = var.ambassador_version
   namespace  = kubernetes_namespace.ingress.metadata[0].name
 
-  # Wait for CRDs to be installed first
-  skip_crds = false
-  wait      = true
-  timeout   = 600
+  # Let Helm install CRDs but avoid default resources
+  skip_crds        = false
+  wait             = true
+  timeout          = 600
+  cleanup_on_fail  = true
+  atomic           = true
+  create_namespace = false
 
   values = [
     yamlencode({
       replicaCount = var.ambassador_replica_count
 
-      # Disable all default resources that might create CRDs during installation
+      # Disable all default resources that might create custom resources
       createDefaultListeners  = false
       createDevPortalMappings = false
       createDefaultModules    = false
@@ -253,6 +266,14 @@ resource "helm_release" "ambassador" {
 
       # Disable automatic resource creation
       enableAES = false
+
+      # Additional Ambassador-specific settings to prevent Module creation
+      emissaryConfig = {
+        create = false
+      }
+
+      # Disable default configurations that create custom resources
+      createDefaultMapping = false
 
       service = {
         type = "LoadBalancer"
