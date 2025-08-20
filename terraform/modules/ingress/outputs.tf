@@ -27,5 +27,35 @@ output "external_dns_namespace" {
 
 output "letsencrypt_issuer_name" {
   description = "Let's Encrypt ClusterIssuer name"
-  value       = kubernetes_manifest.letsencrypt_issuer.manifest.metadata.name
+  value       = "letsencrypt-prod"
+}
+
+output "ambassador_ready" {
+  description = "Ambassador deployment readiness"
+  value       = helm_release.ambassador.status == "deployed"
+}
+
+output "cert_manager_ready" {
+  description = "cert-manager deployment readiness"
+  value       = helm_release.cert_manager.status == "deployed"
+}
+
+output "external_dns_ready" {
+  description = "external-dns deployment readiness"
+  value       = helm_release.external_dns.status == "deployed"
+}
+
+output "ambassador_module_applied" {
+  description = "Ambassador module configuration applied"
+  value       = null_resource.ambassador_module.id != null
+}
+
+output "ambassador_host_applied" {
+  description = "Ambassador host configuration applied" 
+  value       = null_resource.ambassador_host.id != null
+}
+
+output "letsencrypt_issuer_applied" {
+  description = "Let's Encrypt issuer configuration applied"
+  value       = null_resource.letsencrypt_issuer.id != null
 }
