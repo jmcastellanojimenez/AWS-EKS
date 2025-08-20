@@ -179,6 +179,7 @@ jobs:
             echo "🔄 Planning Helm charts installation first..."
             terraform plan -out=tfplan-helm \
               -target=module.gitops.kubernetes_namespace.gitops \
+              -target=module.gitops.kubernetes_namespace.tekton_pipelines \
               -target=module.gitops.helm_release.argocd \
               -target=module.gitops.helm_release.tekton_pipelines
           fi
@@ -218,7 +219,7 @@ jobs:
               done
             '
             
-            # Wait for Tekton CRDs
+            # Wait for Tekton CRDs and webhook service
             echo "🏗️ Waiting for Tekton CRDs..."
             timeout 300 bash -c '
               while ! kubectl get crd pipelines.tekton.dev >/dev/null 2>&1; do
@@ -229,6 +230,16 @@ jobs:
                 echo "Waiting for Tekton Task CRD..."
                 sleep 10
               done
+            '
+            
+            echo "🔗 Waiting for Tekton webhook service..."
+            timeout 300 bash -c '
+              while ! kubectl get svc -n tekton-pipelines tekton-pipelines-webhook >/dev/null 2>&1; do
+                echo "Waiting for Tekton webhook service..."
+                sleep 10
+              done
+              echo "Waiting for webhook service to be ready..."
+              kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=tekton-pipelines-webhook -n tekton-pipelines --timeout=300s || echo "Webhook pods not ready yet"
             '
             # Note: EventListener CRD is part of Tekton Triggers which is not included in the base chart
             

@@ -176,13 +176,25 @@ resource "helm_release" "argocd" {
   depends_on = [kubernetes_namespace.gitops]
 }
 
+# Create Tekton namespace
+resource "kubernetes_namespace" "tekton_pipelines" {
+  metadata {
+    name = "tekton-pipelines"
+    labels = {
+      "app.kubernetes.io/name"       = "tekton-pipelines"
+      "app.kubernetes.io/managed-by" = "terraform"
+      "app.kubernetes.io/part-of"    = local.project_name
+    }
+  }
+}
+
 # Tekton Pipelines
 resource "helm_release" "tekton_pipelines" {
   name       = "tekton-pipelines"
   repository = "https://cdfoundation.github.io/tekton-helm-chart"
   chart      = "tekton-pipeline"
   version    = var.tekton_version
-  namespace  = kubernetes_namespace.gitops.metadata[0].name
+  namespace  = kubernetes_namespace.tekton_pipelines.metadata[0].name
 
   values = [
     yamlencode({
@@ -214,7 +226,7 @@ resource "helm_release" "tekton_pipelines" {
     })
   ]
 
-  depends_on = [kubernetes_namespace.gitops]
+  depends_on = [kubernetes_namespace.tekton_pipelines]
 }
 
 # Tekton Triggers (included in tekton-pipeline chart, not a separate release)
@@ -270,6 +282,12 @@ resource "time_sleep" "wait_for_tekton_crds" {
   create_duration = "60s"
 }
 
+# Wait for Tekton webhook service to be ready
+resource "time_sleep" "wait_for_tekton_webhook" {
+  depends_on      = [time_sleep.wait_for_tekton_crds]
+  create_duration = "120s"
+}
+
 # ArgoCD Application of Applications
 resource "kubernetes_manifest" "app_of_apps" {
   manifest = {
@@ -316,7 +334,7 @@ resource "kubernetes_manifest" "build_pipeline" {
     kind       = "Pipeline"
     metadata = {
       name      = "build-and-push"
-      namespace = kubernetes_namespace.gitops.metadata[0].name
+      namespace = kubernetes_namespace.tekton_pipelines.metadata[0].name
     }
     spec = {
       params = [
@@ -417,7 +435,7 @@ resource "kubernetes_manifest" "build_pipeline" {
   # Enable server-side apply to handle CRD timing issues
   computed_fields = ["metadata.labels", "metadata.annotations"]
   
-  depends_on = [time_sleep.wait_for_tekton_crds]
+  depends_on = [time_sleep.wait_for_tekton_webhook]
 }
 
 # Trivy security scanner task
@@ -427,7 +445,7 @@ resource "kubernetes_manifest" "trivy_task" {
     kind       = "Task"
     metadata = {
       name      = "trivy-scanner"
-      namespace = kubernetes_namespace.gitops.metadata[0].name
+      namespace = kubernetes_namespace.tekton_pipelines.metadata[0].name
     }
     spec = {
       workspaces = [
@@ -464,7 +482,7 @@ resource "kubernetes_manifest" "trivy_task" {
   # Enable server-side apply to handle CRD timing issues
   computed_fields = ["metadata.labels", "metadata.annotations"]
   
-  depends_on = [time_sleep.wait_for_tekton_crds]
+  depends_on = [time_sleep.wait_for_tekton_webhook]
 }
 
 # GitHub webhook EventListener
@@ -519,5 +537,5 @@ resource "kubernetes_manifest" "github_eventlistener" {
   # Enable server-side apply to handle CRD timing issues
   computed_fields = ["metadata.labels", "metadata.annotations"]
   
-  depends_on = [time_sleep.wait_for_tekton_crds]
+  depends_on = [time_sleep.wait_for_tekton_webhook]
 }
