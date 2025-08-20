@@ -244,8 +244,9 @@ resource "helm_release" "external_dns" {
 # Install Ambassador CRDs first
 resource "null_resource" "ambassador_crds" {
   triggers = {
-    cluster_name = var.cluster_name
-    aws_region   = var.aws_region
+    cluster_name       = var.cluster_name
+    aws_region         = var.aws_region
+    ambassador_version = var.ambassador_version
   }
 
   provisioner "local-exec" {
@@ -254,7 +255,7 @@ resource "null_resource" "ambassador_crds" {
       aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
       
       # Install Ambassador CRDs
-      kubectl apply -f https://app.getambassador.io/yaml/emissary/${var.ambassador_version}/emissary-crds.yaml
+      kubectl apply -f https://app.getambassador.io/yaml/emissary/${self.triggers.ambassador_version}/emissary-crds.yaml
     EOT
   }
 
@@ -262,7 +263,7 @@ resource "null_resource" "ambassador_crds" {
     when    = destroy
     command = <<-EOT
       aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
-      kubectl delete -f https://app.getambassador.io/yaml/emissary/${var.ambassador_version}/emissary-crds.yaml --ignore-not-found=true 2>/dev/null || true
+      kubectl delete -f https://app.getambassador.io/yaml/emissary/${self.triggers.ambassador_version}/emissary-crds.yaml --ignore-not-found=true 2>/dev/null || true
     EOT
   }
 
