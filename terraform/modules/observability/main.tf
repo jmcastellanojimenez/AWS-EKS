@@ -335,223 +335,224 @@ resource "helm_release" "prometheus_stack" {
 #   depends_on = [helm_release.tempo]
 # }
 
-# Loki for logs
-resource "helm_release" "loki" {
-  name       = "loki"
-  repository = "https://grafana.github.io/helm-charts"
-  chart      = "loki"
-  version    = var.loki_version
-  namespace  = kubernetes_namespace.observability.metadata[0].name
-  
-  timeout       = 900
-  wait          = true
-  wait_for_jobs = true
+# Loki for logs - temporarily disabled due to persistent deployment failures
+# Will be re-enabled once cluster stability is improved
+# resource "helm_release" "loki" {
+#   name       = "loki"
+#   repository = "https://grafana.github.io/helm-charts"
+#   chart      = "loki"
+#   version    = var.loki_version
+#   namespace  = kubernetes_namespace.observability.metadata[0].name
+#   
+#   timeout       = 900
+#   wait          = true
+#   wait_for_jobs = true
+# 
+#   values = [
+#     yamlencode({
+#       # Simple single-binary Loki configuration
+#       deploymentMode = "SingleBinary"
+#       
+#       loki = {
+#         auth_enabled = false
+#         commonConfig = {
+#           replication_factor = 1
+#         }
+#         storage = {
+#           type = "filesystem"
+#         }
+#         schemaConfig = {
+#           configs = [
+#             {
+#               from = "2024-01-01"
+#               store = "tsdb"
+#               object_store = "filesystem"
+#               schema = "v12"
+#               index = {
+#                 prefix = "index_"
+#                 period = "24h"
+#               }
+#             }
+#           ]
+#         }
+#         limits_config = {
+#           enforce_metric_name = false
+#           reject_old_samples = true
+#           reject_old_samples_max_age = "168h"
+#           max_cache_freshness_per_query = "10m"
+#           query_timeout = "300s"
+#         }
+#       }
+# 
+#       singleBinary = {
+#         replicas = 1
+#         resources = {
+#           requests = {
+#             cpu    = "100m"
+#             memory = "256Mi"
+#           }
+#           limits = {
+#             cpu    = "500m"
+#             memory = "1Gi"
+#           }
+#         }
+#         persistence = {
+#           enabled = true
+#           size = "10Gi"
+#           storageClass = "gp3"
+#         }
+#       }
+# 
+#       # Disable distributed components
+#       write = {
+#         replicas = 0
+#       }
+#       read = {
+#         replicas = 0
+#       }
+#       backend = {
+#         replicas = 0
+#       }
+#       gateway = {
+#         enabled = false
+#       }
+# 
+#       serviceAccount = {
+#         annotations = {
+#           "eks.amazonaws.com/role-arn" = var.loki_irsa_role_arn
+#         }
+#       }
+#     })
+#   ]
+# 
+#   depends_on = [helm_release.prometheus_stack]
+# }
 
-  values = [
-    yamlencode({
-      # Simple single-binary Loki configuration
-      deploymentMode = "SingleBinary"
-      
-      loki = {
-        auth_enabled = false
-        commonConfig = {
-          replication_factor = 1
-        }
-        storage = {
-          type = "filesystem"
-        }
-        schemaConfig = {
-          configs = [
-            {
-              from = "2024-01-01"
-              store = "tsdb"
-              object_store = "filesystem"
-              schema = "v12"
-              index = {
-                prefix = "index_"
-                period = "24h"
-              }
-            }
-          ]
-        }
-        limits_config = {
-          enforce_metric_name = false
-          reject_old_samples = true
-          reject_old_samples_max_age = "168h"
-          max_cache_freshness_per_query = "10m"
-          query_timeout = "300s"
-        }
-      }
+# Promtail for log collection - disabled since Loki is disabled
+# resource "helm_release" "promtail" {
+#   name       = "promtail"
+#   repository = "https://grafana.github.io/helm-charts"
+#   chart      = "promtail"
+#   version    = var.promtail_version
+#   namespace  = kubernetes_namespace.observability.metadata[0].name
+#   
+#   timeout       = 600
+#   wait          = true
+#   wait_for_jobs = true
+# 
+#   values = [
+#     yamlencode({
+#       config = {
+#         clients = [
+#           {
+#             url = "http://loki.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3100/loki/api/v1/push"
+#           }
+#         ]
+#       }
+# 
+#       resources = {
+#         requests = {
+#           cpu    = "100m"
+#           memory = "128Mi"
+#         }
+#         limits = {
+#           cpu    = "500m"
+#           memory = "512Mi"
+#         }
+#       }
+# 
+#       tolerations = [
+#         {
+#           key      = "node-role.kubernetes.io/system"
+#           operator = "Exists"
+#           effect   = "NoSchedule"
+#         }
+#       ]
+#     })
+#   ]
+# 
+#   depends_on = [helm_release.loki]
+# }
 
-      singleBinary = {
-        replicas = 1
-        resources = {
-          requests = {
-            cpu    = "100m"
-            memory = "256Mi"
-          }
-          limits = {
-            cpu    = "500m"
-            memory = "1Gi"
-          }
-        }
-        persistence = {
-          enabled = true
-          size = "10Gi"
-          storageClass = "gp3"
-        }
-      }
-
-      # Disable distributed components
-      write = {
-        replicas = 0
-      }
-      read = {
-        replicas = 0
-      }
-      backend = {
-        replicas = 0
-      }
-      gateway = {
-        enabled = false
-      }
-
-      serviceAccount = {
-        annotations = {
-          "eks.amazonaws.com/role-arn" = var.loki_irsa_role_arn
-        }
-      }
-    })
-  ]
-
-  depends_on = [helm_release.prometheus_stack]
-}
-
-# Promtail for log collection
-resource "helm_release" "promtail" {
-  name       = "promtail"
-  repository = "https://grafana.github.io/helm-charts"
-  chart      = "promtail"
-  version    = var.promtail_version
-  namespace  = kubernetes_namespace.observability.metadata[0].name
-  
-  timeout       = 600
-  wait          = true
-  wait_for_jobs = true
-
-  values = [
-    yamlencode({
-      config = {
-        clients = [
-          {
-            url = "http://loki.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3100/loki/api/v1/push"
-          }
-        ]
-      }
-
-      resources = {
-        requests = {
-          cpu    = "100m"
-          memory = "128Mi"
-        }
-        limits = {
-          cpu    = "500m"
-          memory = "512Mi"
-        }
-      }
-
-      tolerations = [
-        {
-          key      = "node-role.kubernetes.io/system"
-          operator = "Exists"
-          effect   = "NoSchedule"
-        }
-      ]
-    })
-  ]
-
-  depends_on = [helm_release.loki]
-}
-
-# Tempo for distributed tracing
-resource "helm_release" "tempo" {
-  name       = "tempo"
-  repository = "https://grafana.github.io/helm-charts"
-  chart      = "tempo"
-  version    = var.tempo_version
-  namespace  = kubernetes_namespace.observability.metadata[0].name
-  
-  timeout       = 600
-  wait          = true
-  wait_for_jobs = true
-
-  values = [
-    yamlencode({
-      # Simple monolithic Tempo configuration
-      tempo = {
-        storage = {
-          trace = {
-            backend = "local"
-            local = {
-              path = "/tmp/tempo/blocks"
-            }
-          }
-        }
-        
-        receivers = {
-          jaeger = {
-            protocols = {
-              grpc = {
-                endpoint = "0.0.0.0:14250"
-              }
-              thrift_http = {
-                endpoint = "0.0.0.0:14268"
-              }
-            }
-          }
-          otlp = {
-            protocols = {
-              grpc = {
-                endpoint = "0.0.0.0:4317"
-              }
-              http = {
-                endpoint = "0.0.0.0:4318"
-              }
-            }
-          }
-        }
-      }
-
-      # Single instance deployment
-      replicas = 1
-      
-      resources = {
-        requests = {
-          cpu    = "100m"
-          memory = "256Mi"
-        }
-        limits = {
-          cpu    = "500m"
-          memory = "1Gi"
-        }
-      }
-
-      persistence = {
-        enabled = true
-        size = "10Gi"
-        storageClass = "gp3"
-      }
-
-      serviceAccount = {
-        annotations = {
-          "eks.amazonaws.com/role-arn" = var.tempo_irsa_role_arn
-        }
-      }
-    })
-  ]
-
-  depends_on = [helm_release.loki]
-}
+# Tempo for distributed tracing - temporarily disabled for minimal observability stack
+# resource "helm_release" "tempo" {
+#   name       = "tempo"
+#   repository = "https://grafana.github.io/helm-charts"
+#   chart      = "tempo"
+#   version    = var.tempo_version
+#   namespace  = kubernetes_namespace.observability.metadata[0].name
+#   
+#   timeout       = 600
+#   wait          = true
+#   wait_for_jobs = true
+# 
+#   values = [
+#     yamlencode({
+#       # Simple monolithic Tempo configuration
+#       tempo = {
+#         storage = {
+#           trace = {
+#             backend = "local"
+#             local = {
+#               path = "/tmp/tempo/blocks"
+#             }
+#           }
+#         }
+#         
+#         receivers = {
+#           jaeger = {
+#             protocols = {
+#               grpc = {
+#                 endpoint = "0.0.0.0:14250"
+#               }
+#               thrift_http = {
+#                 endpoint = "0.0.0.0:14268"
+#               }
+#             }
+#           }
+#           otlp = {
+#             protocols = {
+#               grpc = {
+#                 endpoint = "0.0.0.0:4317"
+#               }
+#               http = {
+#                 endpoint = "0.0.0.0:4318"
+#               }
+#             }
+#           }
+#         }
+#       }
+# 
+#       # Single instance deployment
+#       replicas = 1
+#       
+#       resources = {
+#         requests = {
+#           cpu    = "100m"
+#           memory = "256Mi"
+#         }
+#         limits = {
+#           cpu    = "500m"
+#           memory = "1Gi"
+#         }
+#       }
+# 
+#       persistence = {
+#         enabled = true
+#         size = "10Gi"
+#         storageClass = "gp3"
+#       }
+# 
+#       serviceAccount = {
+#         annotations = {
+#           "eks.amazonaws.com/role-arn" = var.tempo_irsa_role_arn
+#         }
+#       }
+#     })
+#   ]
+# 
+#   depends_on = [helm_release.loki]
+# }
 
 # OpenTelemetry components temporarily disabled to resolve CRD issues
 # Will be re-enabled once core LGTM stack is deployed successfully
@@ -686,16 +687,6 @@ resource "helm_release" "grafana" {
               type      = "prometheus"
               url       = "http://prometheus-kube-prometheus-prometheus.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:9090"
               isDefault = true
-            },
-            {
-              name = "Loki"
-              type = "loki"
-              url  = "http://loki.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3100"
-            },
-            {
-              name = "Tempo"
-              type = "tempo"
-              url  = "http://tempo.${kubernetes_namespace.observability.metadata[0].name}.svc.cluster.local:3200"
             }
           ]
         }
@@ -769,5 +760,5 @@ resource "helm_release" "grafana" {
     })
   ]
 
-  depends_on = [helm_release.tempo]
+  depends_on = [helm_release.prometheus_stack]
 }
