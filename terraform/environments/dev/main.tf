@@ -132,6 +132,7 @@ module "ingress" {
   project_name         = var.project_name
   environment         = var.environment
   cluster_name        = module.foundation.cluster_name
+  aws_region          = var.aws_region
   domain_name         = var.domain_name
   domain_filters      = [var.domain_name]
   letsencrypt_email   = var.letsencrypt_email
