@@ -106,9 +106,9 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           if [[ "${{ needs.validate-inputs.outputs.action }}" == "destroy" ]]; then
-            terraform plan -destroy -out=tfplan
+            terraform plan -destroy -target=module.foundation -target=module.observability_irsa_roles -target=aws_iam_policy.observability_s3_policy -out=tfplan
           else
-            terraform plan -out=tfplan
+            terraform plan -target=module.foundation -target=module.observability_irsa_roles -target=aws_iam_policy.observability_s3_policy -out=tfplan
           fi
 
       - name: 🚀 Terraform Apply
@@ -172,11 +172,16 @@ jobs:
             if [[ "${{ needs.validate-inputs.outputs.action }}" == "apply" ]]; then
               echo "### ✅ Foundation Platform Deployed Successfully!" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "**Infrastructure Created:**" >> $GITHUB_STEP_SUMMARY
-              echo "- 🌐 VPC with public/private subnets across 2+ AZs" >> $GITHUB_STEP_SUMMARY
-              echo "- 🏗️ EKS cluster with managed node group" >> $GITHUB_STEP_SUMMARY
+              echo "**Foundation Infrastructure Created:**" >> $GITHUB_STEP_SUMMARY
+              echo "- 🌐 VPC with public/private subnets across multiple AZs" >> $GITHUB_STEP_SUMMARY
+              echo "- 🏗️ EKS cluster with managed node groups (system + workload)" >> $GITHUB_STEP_SUMMARY
               echo "- 🔐 IAM roles and OIDC provider for IRSA" >> $GITHUB_STEP_SUMMARY
-              echo "- 📦 Essential add-ons (vpc-cni, kube-proxy, coredns, ebs-csi-driver)" >> $GITHUB_STEP_SUMMARY
+              echo "- 📦 Essential EKS add-ons (vpc-cni, kube-proxy, coredns, ebs-csi-driver)" >> $GITHUB_STEP_SUMMARY
+              echo "- 🪣 S3 buckets for observability data storage" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔑 KMS keys for encryption" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY  
+              echo "- Run other workflows (Ingress, Observability, etc.) now that the foundation is ready" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               if [[ -n "${{ needs.terraform-operation.outputs.cluster-name }}" ]]; then
                 echo "**Cluster Details:**" >> $GITHUB_STEP_SUMMARY
