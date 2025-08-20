@@ -13,6 +13,10 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.9"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 }
 
@@ -110,35 +114,34 @@ resource "time_sleep" "wait_for_cert_manager_crds" {
 }
 
 # ClusterIssuer for Let's Encrypt
-resource "kubernetes_manifest" "letsencrypt_issuer" {
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "ClusterIssuer"
-    metadata = {
-      name = "letsencrypt-prod"
-    }
-    spec = {
-      acme = {
-        server = "https://acme-v02.api.letsencrypt.org/directory"
-        email  = var.letsencrypt_email
-        privateKeySecretRef = {
-          name = "letsencrypt-prod"
-        }
-        solvers = [
-          {
-            dns01 = {
-              cloudflare = {
-                email = var.cloudflare_email
-                apiTokenSecretRef = {
-                  name = "cloudflare-api-token"
-                  key  = "api-token"
-                }
-              }
-            }
-          }
-        ]
-      }
-    }
+resource "null_resource" "letsencrypt_issuer" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      cat <<EOF | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${var.letsencrypt_email}
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - dns01:
+        cloudflare:
+          email: ${var.cloudflare_email}
+          apiTokenSecretRef:
+            name: cloudflare-api-token
+            key: api-token
+EOF
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "kubectl delete clusterissuer letsencrypt-prod --ignore-not-found=true"
   }
 
   depends_on = [time_sleep.wait_for_cert_manager_crds]
@@ -277,55 +280,65 @@ resource "time_sleep" "wait_for_ambassador_crds" {
 }
 
 # Ambassador Module and Mappings
-resource "kubernetes_manifest" "ambassador_module" {
-  manifest = {
-    apiVersion = "getambassador.io/v3alpha1"
-    kind       = "Module"
-    metadata = {
-      name      = "ambassador"
-      namespace = kubernetes_namespace.ingress.metadata[0].name
-    }
-    spec = {
-      config = {
-        diagnostics = {
-          enabled = true
-        }
-        lua_scripts                          = []
-        use_proxy_proto                      = false
-        use_remote_address                   = true
-        xff_num_trusted_hops                 = 1
-        server_name                          = var.domain_name
-        enable_grpc_http11_bridge            = false
-        enable_grpc_web                      = false
-        proper_case                          = false
-        merge_slashes                        = false
-        reject_requests_with_escaped_slashes = false
-      }
-    }
+resource "null_resource" "ambassador_module" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      cat <<EOF | kubectl apply -f -
+apiVersion: getambassador.io/v3alpha1
+kind: Module
+metadata:
+  name: ambassador
+  namespace: ingress-system
+spec:
+  config:
+    diagnostics:
+      enabled: true
+    lua_scripts: []
+    use_proxy_proto: false
+    use_remote_address: true
+    xff_num_trusted_hops: 1
+    server_name: ${var.domain_name}
+    enable_grpc_http11_bridge: false
+    enable_grpc_web: false
+    proper_case: false
+    merge_slashes: false
+    reject_requests_with_escaped_slashes: false
+EOF
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "kubectl delete module ambassador -n ingress-system --ignore-not-found=true"
   }
 
   depends_on = [time_sleep.wait_for_ambassador_crds]
 }
 
 # Default Ambassador Host
-resource "kubernetes_manifest" "ambassador_host" {
-  manifest = {
-    apiVersion = "getambassador.io/v3alpha1"
-    kind       = "Host"
-    metadata = {
-      name      = "default-host"
-      namespace = kubernetes_namespace.ingress.metadata[0].name
-    }
-    spec = {
-      hostname = var.domain_name
-      acmeProvider = {
-        authority = "https://acme-v02.api.letsencrypt.org/directory"
-        email     = var.letsencrypt_email
-      }
-      tlsSecret = {
-        name = "ambassador-certs"
-      }
-    }
+resource "null_resource" "ambassador_host" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      cat <<EOF | kubectl apply -f -
+apiVersion: getambassador.io/v3alpha1
+kind: Host
+metadata:
+  name: default-host
+  namespace: ingress-system
+spec:
+  hostname: ${var.domain_name}
+  acmeProvider:
+    authority: https://acme-v02.api.letsencrypt.org/directory
+    email: ${var.letsencrypt_email}
+  tlsSecret:
+    name: ambassador-certs
+EOF
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "kubectl delete host default-host -n ingress-system --ignore-not-found=true"
   }
 
   depends_on = [time_sleep.wait_for_ambassador_crds, time_sleep.wait_for_cert_manager_crds]
