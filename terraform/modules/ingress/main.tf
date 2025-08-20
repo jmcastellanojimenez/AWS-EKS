@@ -117,7 +117,11 @@ resource "time_sleep" "wait_for_cert_manager_crds" {
 resource "null_resource" "letsencrypt_issuer" {
   provisioner "local-exec" {
     command = <<-EOT
-      cat <<EOF | kubectl apply -f -
+      # Configure kubectl to use the EKS cluster
+      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name}
+      
+      # Apply the ClusterIssuer with validation disabled to avoid API issues
+      cat <<EOF | kubectl apply --validate=false -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -137,11 +141,22 @@ spec:
             key: api-token
 EOF
     EOT
+
+    environment = {
+      AWS_REGION = var.aws_region
+    }
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "kubectl delete clusterissuer letsencrypt-prod --ignore-not-found=true"
+    command = <<-EOT
+      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name} 2>/dev/null || true
+      kubectl delete clusterissuer letsencrypt-prod --ignore-not-found=true 2>/dev/null || true
+    EOT
+
+    environment = {
+      AWS_REGION = var.aws_region
+    }
   }
 
   depends_on = [time_sleep.wait_for_cert_manager_crds]
@@ -168,6 +183,10 @@ resource "helm_release" "external_dns" {
   chart      = "external-dns"
   version    = var.external_dns_version
   namespace  = kubernetes_namespace.ingress.metadata[0].name
+
+  # Add timeout and wait configuration
+  wait    = true
+  timeout = 300
 
   values = [
     yamlencode({
@@ -229,9 +248,14 @@ resource "helm_release" "ambassador" {
     yamlencode({
       replicaCount = var.ambassador_replica_count
 
-      # Disable default module creation to avoid CRD issues
+      # Disable all default resources that might create CRDs during installation
       createDefaultListeners  = false
       createDevPortalMappings = false
+      createDefaultModules    = false
+      createDefaultHosts      = false
+
+      # Disable automatic resource creation
+      enableAES = false
 
       service = {
         type = "LoadBalancer"
@@ -292,7 +316,11 @@ resource "time_sleep" "wait_for_ambassador_crds" {
 resource "null_resource" "ambassador_module" {
   provisioner "local-exec" {
     command = <<-EOT
-      cat <<EOF | kubectl apply -f -
+      # Configure kubectl to use the EKS cluster
+      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name}
+      
+      # Apply the Module with validation disabled to avoid API issues
+      cat <<EOF | kubectl apply --validate=false -f -
 apiVersion: getambassador.io/v3alpha1
 kind: Module
 metadata:
@@ -314,11 +342,22 @@ spec:
     reject_requests_with_escaped_slashes: false
 EOF
     EOT
+
+    environment = {
+      AWS_REGION = var.aws_region
+    }
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "kubectl delete module ambassador -n ingress-system --ignore-not-found=true"
+    command = <<-EOT
+      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name} 2>/dev/null || true
+      kubectl delete module ambassador -n ingress-system --ignore-not-found=true 2>/dev/null || true
+    EOT
+
+    environment = {
+      AWS_REGION = var.aws_region
+    }
   }
 
   depends_on = [time_sleep.wait_for_ambassador_crds]
@@ -328,7 +367,11 @@ EOF
 resource "null_resource" "ambassador_host" {
   provisioner "local-exec" {
     command = <<-EOT
-      cat <<EOF | kubectl apply -f -
+      # Configure kubectl to use the EKS cluster
+      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name}
+      
+      # Apply the Host with validation disabled to avoid API issues
+      cat <<EOF | kubectl apply --validate=false -f -
 apiVersion: getambassador.io/v3alpha1
 kind: Host
 metadata:
@@ -343,11 +386,22 @@ spec:
     name: ambassador-certs
 EOF
     EOT
+
+    environment = {
+      AWS_REGION = var.aws_region
+    }
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "kubectl delete host default-host -n ingress-system --ignore-not-found=true"
+    command = <<-EOT
+      aws eks update-kubeconfig --region $AWS_REGION --name ${var.cluster_name} 2>/dev/null || true
+      kubectl delete host default-host -n ingress-system --ignore-not-found=true 2>/dev/null || true
+    EOT
+
+    environment = {
+      AWS_REGION = var.aws_region
+    }
   }
 
   depends_on = [time_sleep.wait_for_ambassador_crds, time_sleep.wait_for_cert_manager_crds]
