@@ -66,22 +66,26 @@ variable "kubernetes_version" {
 variable "domain_name" {
   description = "Primary domain name"
   type        = string
+  default     = "example.com"
 }
 
 variable "letsencrypt_email" {
   description = "Email for Let's Encrypt certificates"
   type        = string
+  default     = "admin@example.com"
 }
 
 variable "cloudflare_email" {
   description = "Cloudflare account email"
   type        = string
+  default     = "admin@example.com"
 }
 
 variable "cloudflare_api_token" {
   description = "Cloudflare API token"
   type        = string
   sensitive   = true
+  default     = "placeholder-token"
 }
 
 # Observability
