@@ -183,7 +183,7 @@ resource "kubernetes_namespace" "tekton_pipelines" {
     labels = {
       "app.kubernetes.io/name"       = "tekton-pipelines"
       "app.kubernetes.io/managed-by" = "terraform"
-      "app.kubernetes.io/part-of"    = local.project_name
+      "app.kubernetes.io/part-of"    = var.project_name
     }
   }
 }
