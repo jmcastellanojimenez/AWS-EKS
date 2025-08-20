@@ -237,33 +237,33 @@ resource "helm_release" "grafana" {
     datasources = {
       "datasources.yaml" = {
         apiVersion = 1
-        datasources = compact([
+        datasources = concat([
           {
             name = "Prometheus"
             type = "prometheus"
             url = "http://prometheus-server.${var.namespace}.svc.cluster.local"
             access = "proxy"
             isDefault = true
-          },
-          var.enable_loki ? {
-            name = "Loki"
-            type = "loki"
-            url = "http://loki.${var.namespace}.svc.cluster.local:3100"
-            access = "proxy"
-          } : null,
-          var.enable_tempo ? {
-            name = "Tempo"
-            type = "tempo"
-            url = "http://tempo.${var.namespace}.svc.cluster.local:3100"
-            access = "proxy"
-          } : null,
-          var.enable_mimir ? {
-            name = "Mimir"
-            type = "prometheus"
-            url = "http://mimir-nginx.${var.namespace}.svc.cluster.local/prometheus"
-            access = "proxy"
-          } : null
-        ])
+          }
+        ],
+        var.enable_loki ? [{
+          name = "Loki"
+          type = "loki"
+          url = "http://loki.${var.namespace}.svc.cluster.local:3100"
+          access = "proxy"
+        }] : [],
+        var.enable_tempo ? [{
+          name = "Tempo"
+          type = "tempo"
+          url = "http://tempo.${var.namespace}.svc.cluster.local:3100"
+          access = "proxy"
+        }] : [],
+        var.enable_mimir ? [{
+          name = "Mimir"
+          type = "prometheus"
+          url = "http://mimir-nginx.${var.namespace}.svc.cluster.local/prometheus"
+          access = "proxy"
+        }] : [])
       }
     }
 

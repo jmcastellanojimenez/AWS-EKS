@@ -93,33 +93,33 @@ resource "kubernetes_config_map" "grafana_datasources" {
   data = {
     "datasources.yaml" = yamlencode({
       apiVersion = 1
-      datasources = compact([
+      datasources = concat([
         {
           name      = local.grafana_datasources.prometheus.name
           type      = local.grafana_datasources.prometheus.type
           url       = local.grafana_datasources.prometheus.url
           access    = "proxy"
           isDefault = true
-        },
-        var.enable_loki ? {
-          name   = local.grafana_datasources.loki.name
-          type   = local.grafana_datasources.loki.type
-          url    = local.grafana_datasources.loki.url
-          access = "proxy"
-        } : null,
-        var.enable_tempo ? {
-          name   = local.grafana_datasources.tempo.name
-          type   = local.grafana_datasources.tempo.type
-          url    = local.grafana_datasources.tempo.url
-          access = "proxy"
-        } : null,
-        var.enable_mimir ? {
-          name   = local.grafana_datasources.mimir.name
-          type   = local.grafana_datasources.mimir.type
-          url    = local.grafana_datasources.mimir.url
-          access = "proxy"
-        } : null
-      ])
+        }
+      ],
+      var.enable_loki ? [{
+        name   = local.grafana_datasources.loki.name
+        type   = local.grafana_datasources.loki.type
+        url    = local.grafana_datasources.loki.url
+        access = "proxy"
+      }] : [],
+      var.enable_tempo ? [{
+        name   = local.grafana_datasources.tempo.name
+        type   = local.grafana_datasources.tempo.type
+        url    = local.grafana_datasources.tempo.url
+        access = "proxy"
+      }] : [],
+      var.enable_mimir ? [{
+        name   = local.grafana_datasources.mimir.name
+        type   = local.grafana_datasources.mimir.type
+        url    = local.grafana_datasources.mimir.url
+        access = "proxy"
+      }] : [])
     })
   }
 }

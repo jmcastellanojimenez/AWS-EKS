@@ -146,6 +146,12 @@ variable "enable_prometheus" {
   default     = true
 }
 
+variable "enable_grafana" {
+  description = "Enable Grafana for dashboards and visualization"
+  type        = bool
+  default     = true
+}
+
 # ==============================================================================
 # Resource Limits
 # ==============================================================================
