@@ -241,34 +241,8 @@ resource "helm_release" "external_dns" {
 }
 */
 
-# Install Ambassador CRDs first
-resource "null_resource" "ambassador_crds" {
-  triggers = {
-    cluster_name       = var.cluster_name
-    aws_region         = var.aws_region
-    ambassador_version = var.ambassador_version
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # Configure kubectl to use the EKS cluster
-      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
-      
-      # Install Ambassador CRDs
-      kubectl apply -f https://app.getambassador.io/yaml/emissary/${self.triggers.ambassador_version}/emissary-crds.yaml
-    EOT
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
-      kubectl delete -f https://app.getambassador.io/yaml/emissary/${self.triggers.ambassador_version}/emissary-crds.yaml --ignore-not-found=true 2>/dev/null || true
-    EOT
-  }
-
-  depends_on = [kubernetes_namespace.ingress]
-}
+# Use a different approach - let Helm install CRDs but prevent default resources
+# Remove the custom CRD installation since the URL is returning 403
 
 # Ambassador (Emissary Ingress)
 resource "helm_release" "ambassador" {
@@ -278,8 +252,8 @@ resource "helm_release" "ambassador" {
   version    = var.ambassador_version
   namespace  = kubernetes_namespace.ingress.metadata[0].name
 
-  # Skip CRDs during Helm install to avoid conflicts
-  skip_crds        = true
+  # Allow Helm to install CRDs but use minimal configuration
+  skip_crds        = false
   wait             = true
   timeout          = 600
   cleanup_on_fail  = true
@@ -290,22 +264,35 @@ resource "helm_release" "ambassador" {
     yamlencode({
       replicaCount = var.ambassador_replica_count
 
-      # Disable all default resources that might create custom resources
+      # Aggressive approach to disable ALL default resource creation
+      agent = {
+        enabled = false
+      }
+
+      # Disable all Ambassador Edge Stack features
+      enableAES = false
+
+      # Disable all automatic configuration creation
       createDefaultListeners  = false
       createDevPortalMappings = false
       createDefaultModules    = false
       createDefaultHosts      = false
+      createDefaultMapping    = false
 
-      # Disable automatic resource creation
-      enableAES = false
-
-      # Additional Ambassador-specific settings to prevent Module creation
+      # Disable specific components that might create custom resources
       emissaryConfig = {
         create = false
       }
 
-      # Disable default configurations that create custom resources
-      createDefaultMapping = false
+      # Force minimal installation - just the core workload
+      image = {
+        repository = "docker.io/datawire/emissary"
+      }
+
+      # Additional safety measures
+      deploymentStrategy = {
+        type = "RollingUpdate"
+      }
 
       service = {
         type = "LoadBalancer"
@@ -353,13 +340,13 @@ resource "helm_release" "ambassador" {
     })
   ]
 
-  depends_on = [null_resource.ambassador_crds]
+  depends_on = [kubernetes_namespace.ingress]
 }
 
 # Wait for Ambassador CRDs to be available
 resource "time_sleep" "wait_for_ambassador_crds" {
-  depends_on      = [null_resource.ambassador_crds]
-  create_duration = "30s"
+  depends_on      = [helm_release.ambassador]
+  create_duration = "45s"
 }
 
 # Ambassador Module and Mappings
