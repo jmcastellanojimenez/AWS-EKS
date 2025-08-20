@@ -371,9 +371,9 @@ resource "helm_release" "ambassador" {
   # Skip CRDs since they're already installed
   skip_crds        = true
   wait             = true
-  timeout          = 600
-  cleanup_on_fail  = true
-  atomic           = true
+  timeout          = 300
+  cleanup_on_fail  = false
+  atomic           = false
   create_namespace = false
 
   values = [
@@ -411,12 +411,14 @@ resource "helm_release" "ambassador" {
       }
 
       service = {
-        type = "LoadBalancer"
-        annotations = {
-          "service.beta.kubernetes.io/aws-load-balancer-type"                              = "nlb"
-          "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
-          "service.beta.kubernetes.io/aws-load-balancer-backend-protocol"                  = "tcp"
-        }
+        type = "ClusterIP"
+        # Temporarily use ClusterIP to speed up deployment for testing
+        # Switch back to LoadBalancer once deployment is working
+        # annotations = {
+        #   "service.beta.kubernetes.io/aws-load-balancer-type"                              = "nlb"
+        #   "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
+        #   "service.beta.kubernetes.io/aws-load-balancer-backend-protocol"                  = "tcp"
+        # }
       }
 
       env = {
@@ -435,15 +437,16 @@ resource "helm_release" "ambassador" {
       }
 
       autoscaling = {
-        enabled                        = true
-        minReplicas                    = var.ambassador_replica_count
-        maxReplicas                    = var.ambassador_max_replicas
-        targetCPUUtilizationPercentage = 70
+        enabled = false
+        # Temporarily disable autoscaling to simplify deployment
+        # minReplicas                    = var.ambassador_replica_count
+        # maxReplicas                    = var.ambassador_max_replicas
+        # targetCPUUtilizationPercentage = 70
       }
 
       podDisruptionBudget = {
-        enabled      = true
-        minAvailable = 1
+        enabled = false
+        # Temporarily disable PDB to simplify deployment
       }
 
       serviceMonitor = {
