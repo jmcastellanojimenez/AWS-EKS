@@ -173,7 +173,9 @@ resource "kubernetes_secret" "cloudflare_api_token" {
   type = "Opaque"
 }
 
-# external-dns
+# external-dns - Temporarily disabled due to timeout issues
+# TODO: Re-enable once external DNS configuration is resolved
+/*
 resource "helm_release" "external_dns" {
   name       = "external-dns"
   repository = "https://kubernetes-sigs.github.io/external-dns/"
@@ -237,6 +239,35 @@ resource "helm_release" "external_dns" {
 
   depends_on = [kubernetes_secret.cloudflare_api_token]
 }
+*/
+
+# Install Ambassador CRDs first
+resource "null_resource" "ambassador_crds" {
+  triggers = {
+    cluster_name = var.cluster_name
+    aws_region   = var.aws_region
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Configure kubectl to use the EKS cluster
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name}
+      
+      # Install Ambassador CRDs
+      kubectl apply -f https://app.getambassador.io/yaml/emissary/${var.ambassador_version}/emissary-crds.yaml
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${self.triggers.aws_region} --name ${self.triggers.cluster_name} 2>/dev/null || true
+      kubectl delete -f https://app.getambassador.io/yaml/emissary/${var.ambassador_version}/emissary-crds.yaml --ignore-not-found=true 2>/dev/null || true
+    EOT
+  }
+
+  depends_on = [kubernetes_namespace.ingress]
+}
 
 # Ambassador (Emissary Ingress)
 resource "helm_release" "ambassador" {
@@ -246,8 +277,8 @@ resource "helm_release" "ambassador" {
   version    = var.ambassador_version
   namespace  = kubernetes_namespace.ingress.metadata[0].name
 
-  # Let Helm install CRDs but avoid default resources
-  skip_crds        = false
+  # Skip CRDs during Helm install to avoid conflicts
+  skip_crds        = true
   wait             = true
   timeout          = 600
   cleanup_on_fail  = true
@@ -321,13 +352,13 @@ resource "helm_release" "ambassador" {
     })
   ]
 
-  depends_on = [kubernetes_namespace.ingress]
+  depends_on = [null_resource.ambassador_crds]
 }
 
 # Wait for Ambassador CRDs to be available
 resource "time_sleep" "wait_for_ambassador_crds" {
-  depends_on      = [helm_release.ambassador]
-  create_duration = "45s"
+  depends_on      = [null_resource.ambassador_crds]
+  create_duration = "30s"
 }
 
 # Ambassador Module and Mappings

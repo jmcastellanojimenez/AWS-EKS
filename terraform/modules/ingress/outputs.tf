@@ -42,7 +42,7 @@ output "cert_manager_ready" {
 
 output "external_dns_ready" {
   description = "external-dns deployment readiness"
-  value       = helm_release.external_dns.status == "deployed"
+  value       = false # Temporarily disabled
 }
 
 output "ambassador_module_applied" {
