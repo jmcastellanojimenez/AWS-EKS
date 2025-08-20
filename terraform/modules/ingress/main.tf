@@ -370,15 +370,15 @@ resource "helm_release" "ambassador" {
 
   # Skip CRDs since they're already installed
   skip_crds        = true
-  wait             = true
-  timeout          = 300
+  wait             = false
+  timeout          = 120
   cleanup_on_fail  = false
   atomic           = false
   create_namespace = false
 
   values = [
     yamlencode({
-      replicaCount = var.ambassador_replica_count
+      replicaCount = 1
 
       # Aggressive approach to disable ALL default resource creation
       agent = {
@@ -427,12 +427,12 @@ resource "helm_release" "ambassador" {
 
       resources = {
         requests = {
-          cpu    = "200m"
-          memory = "256Mi"
+          cpu    = "50m"
+          memory = "128Mi"
         }
         limits = {
-          cpu    = "500m"
-          memory = "512Mi"
+          cpu    = "200m"
+          memory = "256Mi"
         }
       }
 
@@ -456,6 +456,17 @@ resource "helm_release" "ambassador" {
       prometheusExporter = {
         enabled = false
       }
+
+      # Speed up startup and readiness
+      livenessProbe = {
+        enabled = false
+      }
+      readinessProbe = {
+        enabled = false
+      }
+      
+      # Reduce startup time
+      terminationGracePeriodSeconds = 5
     })
   ]
 
