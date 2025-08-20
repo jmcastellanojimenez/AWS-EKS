@@ -262,7 +262,7 @@ resource "time_sleep" "wait_for_argocd_crds" {
 
 # Wait for Tekton CRDs to be available
 resource "time_sleep" "wait_for_tekton_crds" {
-  depends_on      = [helm_release.tekton_pipelines]
+  depends_on      = [helm_release.tekton_pipelines, helm_release.tekton_triggers]
   create_duration = "60s"
 }
 
