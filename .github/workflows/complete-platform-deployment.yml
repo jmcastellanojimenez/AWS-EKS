@@ -59,11 +59,41 @@ jobs:
           workflows="${{ inputs.workflows_to_deploy }}"
           workflows=$(echo "$workflows" | tr -d ' ')
           
+          # Convert comma-separated list to individual flags
+          workflow_1="false"
+          workflow_2="false"
+          workflow_3="false"
+          workflow_4="false"
+          workflow_5="false"
+          workflow_6="false"
+          workflow_7="false"
+          
+          IFS=',' read -ra WORKFLOW_ARRAY <<< "$workflows"
+          for wf in "${WORKFLOW_ARRAY[@]}"; do
+            case $wf in
+              1) workflow_1="true" ;;
+              2) workflow_2="true" ;;
+              3) workflow_3="true" ;;
+              4) workflow_4="true" ;;
+              5) workflow_5="true" ;;
+              6) workflow_6="true" ;;
+              7) workflow_7="true" ;;
+            esac
+          done
+          
           echo "✅ Deployment confirmed for environment: ${{ inputs.environment }}"
           echo "✅ Workflows to deploy: $workflows"
+          echo "✅ Workflow flags: 1=$workflow_1, 2=$workflow_2, 3=$workflow_3, 4=$workflow_4, 5=$workflow_5, 6=$workflow_6, 7=$workflow_7"
           
           echo "should-proceed=true" >> $GITHUB_OUTPUT
           echo "workflows=$workflows" >> $GITHUB_OUTPUT
+          echo "workflow-1=$workflow_1" >> $GITHUB_OUTPUT
+          echo "workflow-2=$workflow_2" >> $GITHUB_OUTPUT
+          echo "workflow-3=$workflow_3" >> $GITHUB_OUTPUT
+          echo "workflow-4=$workflow_4" >> $GITHUB_OUTPUT
+          echo "workflow-5=$workflow_5" >> $GITHUB_OUTPUT
+          echo "workflow-6=$workflow_6" >> $GITHUB_OUTPUT
+          echo "workflow-7=$workflow_7" >> $GITHUB_OUTPUT
           echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
 
   workflow-1-foundation:
@@ -71,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: validate-inputs
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '1')
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-1 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -121,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [validate-inputs, workflow-1-foundation]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '2') && needs.workflow-1-foundation.outputs.status == 'success'
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-2 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -151,8 +181,22 @@ jobs:
           terraform plan -out=tfplan -target=module.ingress
           terraform apply -auto-approve tfplan
           
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
+          if [[ -z "$cluster_name" ]]; then
+            echo "❌ Could not determine cluster name"
+            exit 1
+          fi
+          
+          echo "✅ Using cluster: $cluster_name"
+          
           # Update kubeconfig first
-          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
           
           # Wait for Ambassador CRDs to be established
           echo "⏳ Waiting for Ambassador CRDs to be established..."
@@ -189,7 +233,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '3') && needs.workflow-1-foundation.outputs.status == 'success' && (needs.workflow-2-ingress.outputs.status == 'success' || !contains(needs.validate-inputs.outputs.workflows, '2'))
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-3 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success') && (needs.validate-inputs.outputs.workflow-2 == 'false' || needs.workflow-2-ingress.outputs.status == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -219,12 +263,26 @@ jobs:
           terraform plan -out=tfplan -target=module.lgtm_observability
           terraform apply -auto-approve tfplan
           
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
+          if [[ -z "$cluster_name" ]]; then
+            echo "❌ Could not determine cluster name"
+            exit 1
+          fi
+          
+          echo "✅ Using cluster: $cluster_name"
+          
           # Wait for observability components to be ready
           echo "⏳ Waiting for observability stack..."
           sleep 240
           
           # Update kubeconfig and verify
-          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
           
           # Verify observability components
           kubectl wait --for=condition=available --timeout=600s deployment/prometheus-server -n observability || true
@@ -238,7 +296,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '4') && needs.workflow-1-foundation.outputs.status == 'success'
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-4 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -268,12 +326,26 @@ jobs:
           terraform plan -out=tfplan -target=module.gitops
           terraform apply -auto-approve tfplan
           
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
+          if [[ -z "$cluster_name" ]]; then
+            echo "❌ Could not determine cluster name"
+            exit 1
+          fi
+          
+          echo "✅ Using cluster: $cluster_name"
+          
           # Wait for GitOps components and CRDs to be ready
           echo "⏳ Waiting for GitOps components and CRDs..."
           sleep 300
           
           # Update kubeconfig and verify
-          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
           
           # Verify GitOps components and CRDs
           kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd || true
@@ -299,7 +371,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '5') && needs.workflow-1-foundation.outputs.status == 'success'
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-5 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -329,12 +401,26 @@ jobs:
           terraform plan -out=tfplan -target=module.security
           terraform apply -auto-approve tfplan
           
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
+          if [[ -z "$cluster_name" ]]; then
+            echo "❌ Could not determine cluster name"
+            exit 1
+          fi
+          
+          echo "✅ Using cluster: $cluster_name"
+          
           # Wait for security components to be ready
           echo "⏳ Waiting for security components..."
           sleep 180
           
           # Update kubeconfig and verify
-          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
           
           # Verify security components
           kubectl wait --for=condition=available --timeout=300s deployment/gatekeeper-controller-manager -n gatekeeper-system || true
@@ -347,7 +433,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-5-security]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '6') && needs.workflow-1-foundation.outputs.status == 'success'
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-6 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -377,12 +463,26 @@ jobs:
           terraform plan -out=tfplan -target=module.service_mesh
           terraform apply -auto-approve tfplan
           
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
+          if [[ -z "$cluster_name" ]]; then
+            echo "❌ Could not determine cluster name"
+            exit 1
+          fi
+          
+          echo "✅ Using cluster: $cluster_name"
+          
           # Wait for service mesh components to be ready
           echo "⏳ Waiting for service mesh components..."
           sleep 240
           
           # Update kubeconfig and verify
-          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
           
           # Verify service mesh components
           kubectl wait --for=condition=available --timeout=600s deployment/istiod -n istio-system || true
@@ -396,7 +496,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops, workflow-5-security, workflow-6-service-mesh]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '7') && needs.workflow-1-foundation.outputs.status == 'success'
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-7 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -426,12 +526,26 @@ jobs:
           terraform plan -out=tfplan -target=module.data_services
           terraform apply -auto-approve tfplan
           
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
+          if [[ -z "$cluster_name" ]]; then
+            echo "❌ Could not determine cluster name"
+            exit 1
+          fi
+          
+          echo "✅ Using cluster: $cluster_name"
+          
           # Wait for data services to be ready
           echo "⏳ Waiting for data services..."
           sleep 300
           
           # Update kubeconfig and verify
-          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
           
           # Verify data services
           kubectl wait --for=condition=ready --timeout=600s pod -l app=postgresql -n data-services || true
@@ -458,11 +572,20 @@ jobs:
           role-session-name: GitHubActions-CompleteDeployment
 
       - name: 🔧 Configure kubectl
+        working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
-          cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          # Get cluster name from Terraform state or previous workflow
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+          else
+            cluster_name=$(terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate" > /dev/null 2>&1 && terraform output -raw cluster_name 2>/dev/null || echo "")
+          fi
+          
           if [[ -n "$cluster_name" ]]; then
             aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
             echo "✅ kubectl configured for cluster: $cluster_name"
+          else
+            echo "⚠️ Could not determine cluster name for kubectl configuration"
           fi
 
       - name: 🔍 Comprehensive Platform Verification
@@ -475,40 +598,40 @@ jobs:
           kubectl get pods -A | grep -E "(Running|Completed)" | wc -l
           
           # Check each workflow deployment
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '1') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
             echo "🏗️ Verifying Foundation Platform..."
             kubectl get nodes --no-headers | wc -l
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '2') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-2 }}" == "true" ]]; then
             echo "🌐 Verifying Ingress + API Gateway..."
             kubectl get pods -n cert-manager
             kubectl get pods -n external-dns
             kubectl get pods -n ambassador
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '3') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-3 }}" == "true" ]]; then
             echo "📈 Verifying LGTM Observability..."
             kubectl get pods -n observability
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '4') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-4 }}" == "true" ]]; then
             echo "🔄 Verifying GitOps & Deployment Automation..."
             kubectl get pods -n argocd
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '5') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-5 }}" == "true" ]]; then
             echo "🔐 Verifying Security Foundation..."
             kubectl get pods -n security
             kubectl get pods -n gatekeeper-system
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '6') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-6 }}" == "true" ]]; then
             echo "🛡️ Verifying Service Mesh..."
             kubectl get pods -n istio-system
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '7') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-7 }}" == "true" ]]; then
             echo "📊 Verifying Data Services..."
             kubectl get pods -n data-services
           fi
@@ -533,31 +656,31 @@ jobs:
           echo "### 📊 Workflow Deployment Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '1') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
             echo "- 🏗️ **Workflow 1 - Foundation Platform**: ${{ needs.workflow-1-foundation.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '2') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-2 }}" == "true" ]]; then
             echo "- 🌐 **Workflow 2 - Ingress + API Gateway**: ${{ needs.workflow-2-ingress.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '3') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-3 }}" == "true" ]]; then
             echo "- 📈 **Workflow 3 - LGTM Observability**: ${{ needs.workflow-3-observability.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '4') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-4 }}" == "true" ]]; then
             echo "- 🔄 **Workflow 4 - GitOps & Deployment Automation**: ${{ needs.workflow-4-gitops.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '5') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-5 }}" == "true" ]]; then
             echo "- 🔐 **Workflow 5 - Security Foundation**: ${{ needs.workflow-5-security.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '6') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-6 }}" == "true" ]]; then
             echo "- 🛡️ **Workflow 6 - Service Mesh**: ${{ needs.workflow-6-service-mesh.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
-          if [[ "${{ contains(needs.validate-inputs.outputs.workflows, '7') }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-7 }}" == "true" ]]; then
             echo "- 📊 **Workflow 7 - Data Services**: ${{ needs.workflow-7-data-services.result }}" >> $GITHUB_STEP_SUMMARY
           fi
           
@@ -567,7 +690,7 @@ jobs:
           echo "Your complete EKS platform is now deployed and ready for the EcoTrack microservices!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Configure kubectl: \`aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ needs.workflow-1-foundation.outputs.cluster-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "1. Configure kubectl: \`aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name <cluster-name>\`" >> $GITHUB_STEP_SUMMARY
           echo "2. Access Grafana for monitoring" >> $GITHUB_STEP_SUMMARY
           echo "3. Access ArgoCD for GitOps deployments" >> $GITHUB_STEP_SUMMARY
           echo "4. Deploy EcoTrack microservices using the platform" >> $GITHUB_STEP_SUMMARY
