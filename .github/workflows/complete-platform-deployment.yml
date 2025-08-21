@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [validate-inputs, workflow-1-foundation]
-    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-2 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-2 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -228,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress]
-    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-3 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success') && (needs.validate-inputs.outputs.workflow-2 == 'false' || needs.workflow-2-ingress.result == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-3 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -291,7 +291,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
-    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-4 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-4 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -366,7 +366,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops]
-    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-5 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-5 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -428,7 +428,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-5-security]
-    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-6 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-6 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -491,7 +491,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops, workflow-5-security, workflow-6-service-mesh]
-    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-7 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-7 == 'true'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -570,17 +570,33 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           # Get cluster name from Terraform state or previous workflow
-          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]]; then
+          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]] && [[ "${{ needs.workflow-1-foundation.result }}" == "success" ]]; then
             cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
+            echo "✅ Using cluster name from Foundation workflow: $cluster_name"
           else
-            cluster_name=$(terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate" > /dev/null 2>&1 && terraform output -raw cluster_name 2>/dev/null || echo "")
+            echo "🔍 Getting cluster name from Terraform state..."
+            terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate" -input=false > /dev/null 2>&1
+            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+            if [[ -n "$cluster_name" ]]; then
+              echo "✅ Found cluster name in Terraform state: $cluster_name"
+            fi
           fi
           
           if [[ -n "$cluster_name" ]]; then
             aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
             echo "✅ kubectl configured for cluster: $cluster_name"
+            
+            # Test kubectl connection
+            if kubectl get nodes > /dev/null 2>&1; then
+              echo "✅ kubectl connection successful"
+            else
+              echo "❌ kubectl connection failed"
+              exit 1
+            fi
           else
-            echo "⚠️ Could not determine cluster name for kubectl configuration"
+            echo "❌ Could not determine cluster name - Foundation Platform may not be deployed"
+            echo "Please ensure Foundation Platform (workflow 1) is deployed first, or include it in your deployment"
+            exit 1
           fi
 
       - name: 🔍 Comprehensive Platform Verification
