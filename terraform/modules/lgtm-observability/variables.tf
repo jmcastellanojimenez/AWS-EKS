@@ -170,12 +170,12 @@ variable "prometheus_resources" {
   })
   default = {
     requests = {
-      cpu    = "400m"
-      memory = "1024Mi"
+      cpu    = "100m"
+      memory = "128Mi"
     }
     limits = {
-      cpu    = "800m"
-      memory = "2048Mi"
+      cpu    = "500m"
+      memory = "512Mi"
     }
   }
 }

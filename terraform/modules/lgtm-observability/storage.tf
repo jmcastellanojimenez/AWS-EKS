@@ -51,7 +51,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "mimir" {
     }
 
     transition {
-      days          = 30
+      days          = 60
       storage_class = "GLACIER"
     }
 
@@ -110,7 +110,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "loki" {
     }
 
     transition {
-      days          = 30
+      days          = 60
       storage_class = "GLACIER"
     }
 
@@ -169,7 +169,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "tempo" {
     }
 
     transition {
-      days          = 30
+      days          = 60
       storage_class = "GLACIER"
     }
 

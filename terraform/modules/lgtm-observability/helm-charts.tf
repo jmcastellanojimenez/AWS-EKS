@@ -14,6 +14,9 @@ resource "helm_release" "prometheus" {
   chart      = "prometheus"
   version    = local.chart_versions.prometheus
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  timeout    = 600  # Increased timeout to 10 minutes
+  wait       = true
+  wait_for_jobs = false
 
   values = [yamlencode({
     # Global settings

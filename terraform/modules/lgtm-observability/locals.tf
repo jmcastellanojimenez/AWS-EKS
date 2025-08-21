@@ -32,7 +32,7 @@ locals {
   chart_versions = {
     prometheus      = "25.8.0"
     grafana        = "7.0.11"
-    loki           = "5.36.2"
+    loki           = "2.10.2"
     mimir          = "5.1.4"
     tempo          = "1.7.1"
   }
