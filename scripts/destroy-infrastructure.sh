@@ -5,10 +5,22 @@ set -e
 # Complete Infrastructure Teardown Script
 # ============================================================================
 # This script safely destroys all AWS EKS infrastructure and cleans up state
+# Usage: ./destroy-infrastructure.sh [environment] [scope]
+# Examples:
+#   ./destroy-infrastructure.sh dev all
+#   ./destroy-infrastructure.sh dev lgtm
+#   ./destroy-infrastructure.sh dev "3,4,5"
 # ============================================================================
 
-echo "🚨 WARNING: This will destroy ALL infrastructure!"
-echo "================================================"
+# Parse arguments
+ENVIRONMENT="${1:-dev}"
+SCOPE="${2:-all}"
+
+echo "🚨 WARNING: This will destroy infrastructure!"
+echo "=============================================="
+echo "Environment: $ENVIRONMENT"
+echo "Scope: $SCOPE"
+echo ""
 read -p "Type 'DESTROY' to confirm: " confirmation
 
 if [[ "$confirmation" != "DESTROY" ]]; then
@@ -23,9 +35,10 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-ENVIRONMENT="dev"
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TERRAFORM_DIR="${BASE_DIR}/terraform/environments/${ENVIRONMENT}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "011921741593")
 
 echo -e "${YELLOW}Starting infrastructure destruction process...${NC}"
 
@@ -35,9 +48,9 @@ echo -e "${YELLOW}Starting infrastructure destruction process...${NC}"
 echo -e "\n${YELLOW}Step 1: Cleaning up Helm releases...${NC}"
 
 # Check if cluster exists and is accessible
-if aws eks describe-cluster --name eks-platform-${ENVIRONMENT} --region us-east-1 2>/dev/null; then
+if aws eks describe-cluster --name eks-platform-${ENVIRONMENT} --region ${AWS_REGION} 2>/dev/null; then
     echo "Cluster found. Updating kubeconfig..."
-    aws eks update-kubeconfig --name eks-platform-${ENVIRONMENT} --region us-east-1 || true
+    aws eks update-kubeconfig --name eks-platform-${ENVIRONMENT} --region ${AWS_REGION} || true
     
     # Remove Helm releases to avoid stuck finalizers
     echo "Removing Helm releases..."
@@ -66,16 +79,52 @@ cd "${TERRAFORM_DIR}"
 echo "Initializing Terraform..."
 terraform init -backend-config="key=eks-platform/${ENVIRONMENT}/terraform.tfstate" -reconfigure
 
-# Destroy workflows in reverse order (7 to 1)
-WORKFLOWS=(
-    "module.data_services"
-    "module.service_mesh"
-    "module.security"
-    "module.gitops"
-    "module.lgtm_observability"
-    "module.ingress"
-    "module.foundation"
-)
+# Determine which workflows to destroy based on scope
+if [[ "$SCOPE" == "all" ]]; then
+    WORKFLOWS=(
+        "module.data_services"
+        "module.service_mesh"
+        "module.security"
+        "module.gitops"
+        "module.lgtm_observability"
+        "module.ingress"
+        "module.foundation"
+    )
+elif [[ "$SCOPE" == "lgtm" ]]; then
+    WORKFLOWS=("module.lgtm_observability")
+elif [[ "$SCOPE" == "gitops" ]]; then
+    WORKFLOWS=("module.gitops")
+elif [[ "$SCOPE" == "ingress" ]]; then
+    WORKFLOWS=("module.ingress")
+elif [[ "$SCOPE" == "security" ]]; then
+    WORKFLOWS=("module.security")
+elif [[ "$SCOPE" == "service-mesh" ]]; then
+    WORKFLOWS=("module.service_mesh")
+elif [[ "$SCOPE" == "data-services" ]]; then
+    WORKFLOWS=("module.data_services")
+elif [[ "$SCOPE" == "foundation" ]]; then
+    WORKFLOWS=("module.foundation")
+else
+    # Handle comma-separated workflow numbers
+    IFS=',' read -ra NUMS <<< "$SCOPE"
+    WORKFLOWS=()
+    for num in "${NUMS[@]}"; do
+        case "$num" in
+            1) WORKFLOWS+=("module.foundation") ;;
+            2) WORKFLOWS+=("module.ingress") ;;
+            3) WORKFLOWS+=("module.lgtm_observability") ;;
+            4) WORKFLOWS+=("module.gitops") ;;
+            5) WORKFLOWS+=("module.security") ;;
+            6) WORKFLOWS+=("module.service_mesh") ;;
+            7) WORKFLOWS+=("module.data_services") ;;
+        esac
+    done
+    # Reverse the array to destroy in correct order
+    for ((i=${#WORKFLOWS[@]}-1; i>=0; i--)); do
+        reversed+=("${WORKFLOWS[i]}")
+    done
+    WORKFLOWS=("${reversed[@]}")
+fi
 
 for module in "${WORKFLOWS[@]}"; do
     if terraform state list | grep -q "$module"; then

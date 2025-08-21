@@ -1,0 +1,619 @@
+name: 🗑️ Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
+      
+      destroy_scope:
+        description: 'What to destroy'
+        required: true
+        type: choice
+        options:
+          - all
+          - data-services
+          - service-mesh
+          - security
+          - gitops
+          - lgtm
+          - ingress
+          - foundation
+          - selective
+        default: 'all'
+      
+      workflows_to_destroy:
+        description: 'Specific workflows to destroy (comma-separated: 1,2,3,4,5,6,7)'
+        required: false
+        type: string
+        default: ''
+      
+      confirm_destruction:
+        description: 'Type DESTROY to confirm'
+        required: true
+        type: string
+      
+      force_destroy:
+        description: 'Force destroy even if dependencies exist'
+        required: false
+        type: boolean
+        default: false
+      
+      cleanup_state:
+        description: 'Clean up Terraform state after destruction'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: ${{ inputs.environment }}
+  TF_VAR_environment: ${{ inputs.environment }}
+  TERRAFORM_VERSION: "1.5.7"
+
+jobs:
+  validate-destruction:
+    name: ⚠️ Validate Destruction Request
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.validate.outputs.proceed }}
+      destroy_list: ${{ steps.validate.outputs.destroy_list }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Validate confirmation
+        id: validate
+        run: |
+          if [[ "${{ inputs.confirm_destruction }}" != "DESTROY" ]]; then
+            echo "❌ Confirmation failed. You must type 'DESTROY' to proceed."
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "✅ Destruction confirmed"
+          echo "proceed=true" >> $GITHUB_OUTPUT
+          
+          # Determine what to destroy
+          if [[ "${{ inputs.destroy_scope }}" == "all" ]]; then
+            echo "destroy_list=7,6,5,4,3,2,1" >> $GITHUB_OUTPUT
+          elif [[ "${{ inputs.destroy_scope }}" == "selective" ]]; then
+            echo "destroy_list=${{ inputs.workflows_to_destroy }}" >> $GITHUB_OUTPUT
+          else
+            # Map scope to workflow number
+            case "${{ inputs.destroy_scope }}" in
+              data-services) echo "destroy_list=7" >> $GITHUB_OUTPUT ;;
+              service-mesh) echo "destroy_list=6" >> $GITHUB_OUTPUT ;;
+              security) echo "destroy_list=5" >> $GITHUB_OUTPUT ;;
+              gitops) echo "destroy_list=4" >> $GITHUB_OUTPUT ;;
+              lgtm) echo "destroy_list=3" >> $GITHUB_OUTPUT ;;
+              ingress) echo "destroy_list=2" >> $GITHUB_OUTPUT ;;
+              foundation) echo "destroy_list=1" >> $GITHUB_OUTPUT ;;
+            esac
+          fi
+
+  detect-deployed-resources:
+    name: 🔍 Detect Deployed Resources
+    needs: validate-destruction
+    if: needs.validate-destruction.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      deployed_workflows: ${{ steps.detect.outputs.deployed_workflows }}
+      has_data_services: ${{ steps.detect.outputs.has_data_services }}
+      has_service_mesh: ${{ steps.detect.outputs.has_service_mesh }}
+      has_security: ${{ steps.detect.outputs.has_security }}
+      has_gitops: ${{ steps.detect.outputs.has_gitops }}
+      has_lgtm: ${{ steps.detect.outputs.has_lgtm }}
+      has_ingress: ${{ steps.detect.outputs.has_ingress }}
+      has_foundation: ${{ steps.detect.outputs.has_foundation }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Detect deployed resources
+        id: detect
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          # Initialize Terraform
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate" || true
+          
+          # Check what's deployed
+          echo "Checking deployed resources..."
+          
+          DEPLOYED=""
+          
+          # Check each module
+          if terraform state list 2>/dev/null | grep -q "module.data_services"; then
+            echo "has_data_services=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}7,"
+          else
+            echo "has_data_services=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if terraform state list 2>/dev/null | grep -q "module.service_mesh"; then
+            echo "has_service_mesh=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}6,"
+          else
+            echo "has_service_mesh=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if terraform state list 2>/dev/null | grep -q "module.security"; then
+            echo "has_security=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}5,"
+          else
+            echo "has_security=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if terraform state list 2>/dev/null | grep -q "module.gitops"; then
+            echo "has_gitops=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}4,"
+          else
+            echo "has_gitops=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if terraform state list 2>/dev/null | grep -q "module.lgtm_observability"; then
+            echo "has_lgtm=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}3,"
+          else
+            echo "has_lgtm=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if terraform state list 2>/dev/null | grep -q "module.ingress"; then
+            echo "has_ingress=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}2,"
+          else
+            echo "has_ingress=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if terraform state list 2>/dev/null | grep -q "module.foundation"; then
+            echo "has_foundation=true" >> $GITHUB_OUTPUT
+            DEPLOYED="${DEPLOYED}1,"
+          else
+            echo "has_foundation=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Remove trailing comma
+          DEPLOYED=${DEPLOYED%,}
+          echo "deployed_workflows=${DEPLOYED}" >> $GITHUB_OUTPUT
+          
+          echo "📋 Deployed workflows: ${DEPLOYED}"
+
+  cleanup-kubernetes-resources:
+    name: 🧹 Clean Kubernetes Resources
+    needs: [validate-destruction, detect-deployed-resources]
+    if: needs.validate-destruction.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Update kubeconfig
+        continue-on-error: true
+        run: |
+          aws eks update-kubeconfig --name eks-platform-${{ env.ENVIRONMENT }} --region ${{ env.AWS_REGION }} || echo "Cluster not accessible"
+      
+      - name: Remove Helm releases
+        continue-on-error: true
+        run: |
+          # Check if cluster is accessible
+          if kubectl cluster-info 2>/dev/null; then
+            echo "🧹 Cleaning up Helm releases..."
+            
+            # List all Helm releases
+            helm list -A --no-headers | while read -r name namespace _; do
+              echo "  Uninstalling: $name from namespace: $namespace"
+              helm uninstall "$name" -n "$namespace" --wait --timeout 300s || true
+            done
+            
+            echo "🧹 Cleaning up namespaces..."
+            # Delete namespaces (in reverse order of creation)
+            for ns in data-services service-mesh security gitops observability ingress; do
+              if kubectl get namespace "$ns" 2>/dev/null; then
+                echo "  Deleting namespace: $ns"
+                # First, remove finalizers from stuck resources
+                kubectl get all -n "$ns" -o json | \
+                  jq '.items[] | select(.metadata.finalizers != null) | .metadata.finalizers = []' | \
+                  kubectl apply -f - || true
+                
+                # Delete namespace
+                kubectl delete namespace "$ns" --ignore-not-found=true --timeout=60s || true
+              fi
+            done
+          else
+            echo "⚠️ Cluster not accessible, skipping Kubernetes cleanup"
+          fi
+
+  destroy-workflow-7:
+    name: 7️⃣ Destroy Data Services
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources]
+    if: |
+      needs.detect-deployed-resources.outputs.has_data_services == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '7')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Destroy Data Services
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.data_services -auto-approve || echo "Failed to destroy, continuing..."
+
+  destroy-workflow-6:
+    name: 6️⃣ Destroy Service Mesh
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources, destroy-workflow-7]
+    if: |
+      always() &&
+      needs.detect-deployed-resources.outputs.has_service_mesh == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '6')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Destroy Service Mesh
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.service_mesh -auto-approve || echo "Failed to destroy, continuing..."
+
+  destroy-workflow-5:
+    name: 5️⃣ Destroy Security Foundation
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources, destroy-workflow-6]
+    if: |
+      always() &&
+      needs.detect-deployed-resources.outputs.has_security == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '5')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Destroy Security
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.security -auto-approve || echo "Failed to destroy, continuing..."
+
+  destroy-workflow-4:
+    name: 4️⃣ Destroy GitOps
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources, destroy-workflow-5]
+    if: |
+      always() &&
+      needs.detect-deployed-resources.outputs.has_gitops == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '4')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Destroy GitOps
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.gitops -auto-approve || echo "Failed to destroy, continuing..."
+
+  destroy-workflow-3:
+    name: 3️⃣ Destroy LGTM Observability
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources, destroy-workflow-4]
+    if: |
+      always() &&
+      needs.detect-deployed-resources.outputs.has_lgtm == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '3')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Clean up S3 buckets
+        run: |
+          # Empty and delete LGTM S3 buckets
+          for bucket in ${{ env.ENVIRONMENT }}-lgtm-mimir ${{ env.ENVIRONMENT }}-lgtm-loki ${{ env.ENVIRONMENT }}-lgtm-tempo; do
+            FULL_BUCKET="${bucket}-${{ secrets.AWS_ACCOUNT_ID }}"
+            if aws s3api head-bucket --bucket "${FULL_BUCKET}" 2>/dev/null; then
+              echo "Emptying bucket: ${FULL_BUCKET}"
+              aws s3 rm "s3://${FULL_BUCKET}" --recursive || true
+            fi
+          done
+      
+      - name: Destroy LGTM Observability
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.lgtm_observability -auto-approve || echo "Failed to destroy, continuing..."
+
+  destroy-workflow-2:
+    name: 2️⃣ Destroy Ingress
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources, destroy-workflow-3]
+    if: |
+      always() &&
+      needs.detect-deployed-resources.outputs.has_ingress == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '2')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Clean up Load Balancers
+        run: |
+          # Clean up any remaining Load Balancers
+          echo "Checking for Load Balancers..."
+          
+          # Classic Load Balancers
+          aws elb describe-load-balancers --region ${{ env.AWS_REGION }} \
+            --query 'LoadBalancerDescriptions[?Tags[?Key==`kubernetes.io/cluster/eks-platform-${{ env.ENVIRONMENT }}`]].[LoadBalancerName]' \
+            --output text | while read -r lb; do
+            if [[ -n "$lb" ]]; then
+              echo "Deleting ELB: $lb"
+              aws elb delete-load-balancer --load-balancer-name "$lb" --region ${{ env.AWS_REGION }} || true
+            fi
+          done
+          
+          # ALB/NLB
+          aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} \
+            --query 'LoadBalancers[?Tags[?Key==`kubernetes.io/cluster/eks-platform-${{ env.ENVIRONMENT }}`]].[LoadBalancerArn]' \
+            --output text | while read -r lb; do
+            if [[ -n "$lb" ]]; then
+              echo "Deleting ALB/NLB: $lb"
+              aws elbv2 delete-load-balancer --load-balancer-arn "$lb" --region ${{ env.AWS_REGION }} || true
+            fi
+          done
+      
+      - name: Destroy Ingress
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.ingress -auto-approve || echo "Failed to destroy, continuing..."
+
+  destroy-workflow-1:
+    name: 1️⃣ Destroy Foundation
+    needs: [detect-deployed-resources, cleanup-kubernetes-resources, destroy-workflow-2]
+    if: |
+      always() &&
+      needs.detect-deployed-resources.outputs.has_foundation == 'true' &&
+      contains(needs.validate-destruction.outputs.destroy_list, '1')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Clean up Security Groups
+        run: |
+          # Clean up any remaining Security Groups
+          echo "Checking for Security Groups..."
+          aws ec2 describe-security-groups --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:kubernetes.io/cluster/eks-platform-${{ env.ENVIRONMENT }},Values=owned" \
+            --query 'SecurityGroups[].GroupId' --output text | while read -r sg; do
+            if [[ -n "$sg" ]]; then
+              echo "Deleting Security Group: $sg"
+              # First remove all rules
+              aws ec2 revoke-security-group-ingress --group-id "$sg" \
+                --ip-permissions "$(aws ec2 describe-security-groups --group-ids "$sg" \
+                --query 'SecurityGroups[0].IpPermissions' --output json)" 2>/dev/null || true
+              aws ec2 revoke-security-group-egress --group-id "$sg" \
+                --ip-permissions "$(aws ec2 describe-security-groups --group-ids "$sg" \
+                --query 'SecurityGroups[0].IpPermissionsEgress' --output json)" 2>/dev/null || true
+              # Then delete the group
+              aws ec2 delete-security-group --group-id "$sg" --region ${{ env.AWS_REGION }} || true
+            fi
+          done
+      
+      - name: Destroy Foundation
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          terraform destroy -target=module.foundation -auto-approve || echo "Failed to destroy, continuing..."
+
+  final-cleanup:
+    name: 🧹 Final Cleanup
+    needs: [
+      validate-destruction,
+      destroy-workflow-1,
+      destroy-workflow-2,
+      destroy-workflow-3,
+      destroy-workflow-4,
+      destroy-workflow-5,
+      destroy-workflow-6,
+      destroy-workflow-7
+    ]
+    if: |
+      always() &&
+      needs.validate-destruction.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      
+      - name: Final Terraform destroy
+        working-directory: terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend-config="key=eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          
+          # Try a final destroy to catch any remaining resources
+          terraform destroy -auto-approve || echo "Some resources may remain"
+      
+      - name: Clean up Terraform state
+        if: inputs.cleanup_state == true
+        run: |
+          echo "🧹 Cleaning up Terraform state..."
+          
+          # Clear DynamoDB locks
+          aws dynamodb delete-item \
+            --table-name eks-learning-lab-terraform-lock \
+            --key '{"LockID": {"S": "eks-learning-lab-terraform-state-011921741593/eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate-md5"}}' \
+            2>/dev/null || true
+          
+          # Backup and clean state in S3
+          STATE_BUCKET="eks-learning-lab-terraform-state-011921741593"
+          STATE_KEY="eks-platform/${{ env.ENVIRONMENT }}/terraform.tfstate"
+          
+          # Create backup
+          aws s3 cp "s3://${STATE_BUCKET}/${STATE_KEY}" \
+            "s3://${STATE_BUCKET}/backups/${STATE_KEY}.$(date +%Y%m%d-%H%M%S).backup" || true
+          
+          echo "✅ State backed up and locks cleared"
+      
+      - name: Summary
+        run: |
+          echo "# 🗑️ Infrastructure Destruction Complete"
+          echo ""
+          echo "## Summary"
+          echo "- **Environment**: ${{ env.ENVIRONMENT }}"
+          echo "- **Scope**: ${{ inputs.destroy_scope }}"
+          echo "- **Workflows Destroyed**: ${{ needs.validate-destruction.outputs.destroy_list }}"
+          echo "- **State Cleanup**: ${{ inputs.cleanup_state }}"
+          echo ""
+          echo "## Next Steps"
+          echo "1. Verify all resources are destroyed in AWS Console"
+          echo "2. Check for any remaining resources:"
+          echo "   - Load Balancers"
+          echo "   - Security Groups"
+          echo "   - S3 Buckets"
+          echo "   - IAM Roles"
+          echo "3. Run 'terraform init' if you plan to redeploy"
+          echo ""
+          echo "## Redeploy"
+          echo "To redeploy the infrastructure, use the individual workflow deployments or the complete platform deployment workflow."
+
+  notify-destruction:
+    name: 📢 Notify Destruction
+    needs: final-cleanup
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send Slack notification
+        if: vars.SLACK_WEBHOOK_URL != ''
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            Infrastructure Destruction ${{ job.status == 'success' && '✅ Completed' || '❌ Failed' }}
+            Environment: ${{ env.ENVIRONMENT }}
+            Scope: ${{ inputs.destroy_scope }}
+            Initiated by: ${{ github.actor }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}

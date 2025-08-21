@@ -193,3 +193,44 @@ prod-apply: ## Apply production deployment (with extra confirmation)
 	@echo "$(RED)This will deploy to PRODUCTION environment!$(NC)"
 	@echo "$(RED)Type 'DEPLOY_TO_PRODUCTION' to confirm:$(NC)" && read ans && [ "$$ans" = "DEPLOY_TO_PRODUCTION" ]
 	@$(MAKE) apply ENV=prod
+
+# Destruction targets for specific modules
+destroy-all: ## Destroy ALL infrastructure (DANGEROUS!)
+	@echo "$(RED)🚨 WARNING: This will destroy ALL infrastructure!$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) all
+
+destroy-lgtm: ## Destroy LGTM Observability stack only
+	@echo "$(YELLOW)Destroying LGTM Observability stack...$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) lgtm
+
+destroy-gitops: ## Destroy GitOps infrastructure only
+	@echo "$(YELLOW)Destroying GitOps infrastructure...$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) gitops
+
+destroy-ingress: ## Destroy Ingress infrastructure only
+	@echo "$(YELLOW)Destroying Ingress infrastructure...$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) ingress
+
+destroy-security: ## Destroy Security infrastructure only
+	@echo "$(YELLOW)Destroying Security infrastructure...$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) security
+
+destroy-mesh: ## Destroy Service Mesh only
+	@echo "$(YELLOW)Destroying Service Mesh...$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) service-mesh
+
+destroy-data: ## Destroy Data Services only
+	@echo "$(YELLOW)Destroying Data Services...$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) data-services
+
+destroy-foundation: ## Destroy Foundation (EKS cluster) - DANGEROUS!
+	@echo "$(RED)🚨 WARNING: This will destroy the EKS cluster and ALL resources!$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) foundation
+
+destroy-workflow: ## Destroy specific workflow(s) - Usage: make destroy-workflow WORKFLOWS=3,4,5
+	@echo "$(YELLOW)Destroying workflows: $(WORKFLOWS)$(NC)"
+	@./scripts/destroy-infrastructure.sh $(ENV) $(WORKFLOWS)
+
+destroy-check: ## Check what would be destroyed without actually destroying
+	@echo "$(BLUE)Checking deployed resources...$(NC)"
+	cd terraform/environments/$(ENV) && terraform state list | grep module
