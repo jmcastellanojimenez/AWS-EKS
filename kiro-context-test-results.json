@@ -112,7 +112,7 @@
         ]
       }
     ],
-    "execution_time": 0.000228
+    "execution_time": 9.3e-05
   },
   "test_results": [
     {
@@ -132,7 +132,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['Foundation Platform', 'Workflow 1', 'Ingress', 'Workflow 2', 'Observability', 'Workflow 3', 'parallel', 'dependencies', 'sequential']",
-      "timestamp": "2025-08-19T10:43:14.653451"
+      "timestamp": "2025-08-21T11:51:33.027784"
     },
     {
       "test_name": "Resource Planning and Allocation",
@@ -149,7 +149,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['6-20 CPU cores', '24-80GB RAM', 'spot instance', '80%', 'auto-scaling', 'microservices', 't3.large']",
-      "timestamp": "2025-08-19T10:43:14.653471"
+      "timestamp": "2025-08-21T11:51:33.027801"
     },
     {
       "test_name": "Cross-Workflow Integration Points",
@@ -167,7 +167,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['shared VPC', 'observability', 'service mesh', 'GitOps', 'integration points', 'monitoring', 'Istio', 'ArgoCD']",
-      "timestamp": "2025-08-19T10:43:14.653487"
+      "timestamp": "2025-08-21T11:51:33.027811"
     },
     {
       "test_name": "Development Environment Configuration",
@@ -183,7 +183,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['90% spot', 'relaxed', 'DEBUG', 'aggressive', 'development-hours scaling', 'cost optimization']",
-      "timestamp": "2025-08-19T10:43:14.653561"
+      "timestamp": "2025-08-21T11:51:33.027819"
     },
     {
       "test_name": "Production Environment Configuration",
@@ -199,7 +199,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['50% spot', 'conservative', 'strict security', 'high availability', 'audit logging', 'disaster recovery']",
-      "timestamp": "2025-08-19T10:43:14.653576"
+      "timestamp": "2025-08-21T11:51:33.027827"
     },
     {
       "test_name": "EcoTrack Application Architecture",
@@ -219,7 +219,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['5 microservices', 'user-service', 'product-service', 'order-service', 'payment-service', 'notification-service', 'Spring Boot', 'Actuator', 'PostgreSQL', 'Redis']",
-      "timestamp": "2025-08-19T10:43:14.653597"
+      "timestamp": "2025-08-21T11:51:33.027836"
     },
     {
       "test_name": "Service Mesh Integration",
@@ -235,7 +235,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['Istio', 'sidecar injection', 'mTLS', 'traffic management', 'circuit breaking', 'observability']",
-      "timestamp": "2025-08-19T10:43:14.653612"
+      "timestamp": "2025-08-21T11:51:33.027843"
     },
     {
       "test_name": "Spot Instance Management",
@@ -251,7 +251,7 @@
       "response": "PLACEHOLDER - This would be Kiro's actual response",
       "passed": false,
       "notes": "Missing keywords: ['diversified', 'interruption handling', '60-70% savings', 'mixed capacity', 'multiple AZ', 'pod disruption budgets']",
-      "timestamp": "2025-08-19T10:43:14.653624"
+      "timestamp": "2025-08-21T11:51:33.027849"
     }
   ]
 }

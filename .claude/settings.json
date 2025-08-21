@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./terraform", "./k8s-manifests", "./.github"]
+    },
+    "memory": {
+      "command": "npx", 
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    }
+  },
+  "allowedTools": [
+    "Task",
+    "Bash(terraform:*)",
+    "Bash(kubectl:*)",
+    "Bash(helm:*)",
+    "Bash(aws:*)",
+    "Bash(git:*)",
+    "Glob",
+    "Grep", 
+    "LS",
+    "Read",
+    "Edit",
+    "MultiEdit",
+    "Write",
+    "WebFetch",
+    "WebSearch"
+  ]
+}

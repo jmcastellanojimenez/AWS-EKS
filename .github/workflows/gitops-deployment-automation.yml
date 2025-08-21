@@ -206,41 +206,116 @@ jobs:
             cluster_name=$(terraform output -raw cluster_name)
             aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name "$cluster_name"
             
-            # Wait for ArgoCD CRDs
-            echo "🔄 Waiting for ArgoCD CRDs..."
-            timeout 300 bash -c '
-              while ! kubectl get crd applications.argoproj.io >/dev/null 2>&1; do
-                echo "Waiting for ArgoCD Application CRD..."
-                sleep 10
-              done
-              while ! kubectl get crd applicationsets.argoproj.io >/dev/null 2>&1; do
-                echo "Waiting for ArgoCD ApplicationSet CRD..."
-                sleep 10
-              done
-            '
+            # Enhanced CRD verification with exponential backoff
+            echo "🔄 Verifying ArgoCD CRDs with exponential backoff..."
             
-            # Wait for Tekton CRDs and webhook service
-            echo "🏗️ Waiting for Tekton CRDs..."
-            timeout 300 bash -c '
-              while ! kubectl get crd pipelines.tekton.dev >/dev/null 2>&1; do
-                echo "Waiting for Tekton Pipeline CRD..."
-                sleep 10
-              done
-              while ! kubectl get crd tasks.tekton.dev >/dev/null 2>&1; do
-                echo "Waiting for Tekton Task CRD..."
-                sleep 10
-              done
-            '
+            # Required ArgoCD CRDs
+            ARGOCD_CRDS=(
+              "applications.argoproj.io"
+              "applicationsets.argoproj.io" 
+              "appprojects.argoproj.io"
+            )
             
-            echo "🔗 Waiting for Tekton webhook service..."
-            timeout 300 bash -c '
-              while ! kubectl get svc -n tekton-pipelines tekton-pipelines-webhook >/dev/null 2>&1; do
-                echo "Waiting for Tekton webhook service..."
-                sleep 10
+            # Exponential backoff parameters
+            MAX_ATTEMPTS=12
+            BASE_DELAY=5
+            
+            for crd in "${ARGOCD_CRDS[@]}"; do
+              echo "⏳ Verifying CRD: $crd"
+              
+              for attempt in $(seq 1 $MAX_ATTEMPTS); do
+                if kubectl get crd "$crd" >/dev/null 2>&1; then
+                  echo "✅ CRD $crd is available"
+                  break
+                fi
+                
+                if [ $attempt -eq $MAX_ATTEMPTS ]; then
+                  echo "❌ CRD $crd not available after $MAX_ATTEMPTS attempts"
+                  exit 1
+                fi
+                
+                # Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s (max 300s)
+                delay=$((BASE_DELAY * (2 ** (attempt - 1))))
+                if [ $delay -gt 300 ]; then
+                  delay=300
+                fi
+                
+                echo "⏳ Attempt $attempt/$MAX_ATTEMPTS failed, waiting ${delay}s before retry..."
+                sleep $delay
               done
-              echo "Waiting for webhook service to be ready..."
-              kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=tekton-pipelines-webhook -n tekton-pipelines --timeout=300s || echo "Webhook pods not ready yet"
-            '
+            done
+            
+            echo "🏗️ Verifying Tekton CRDs with exponential backoff..."
+            
+            # Required Tekton CRDs
+            TEKTON_CRDS=(
+              "pipelines.tekton.dev"
+              "tasks.tekton.dev"
+              "taskruns.tekton.dev"
+              "pipelineruns.tekton.dev"
+              "clustertasks.tekton.dev"
+            )
+            
+            for crd in "${TEKTON_CRDS[@]}"; do
+              echo "⏳ Verifying CRD: $crd"
+              
+              for attempt in $(seq 1 $MAX_ATTEMPTS); do
+                if kubectl get crd "$crd" >/dev/null 2>&1; then
+                  echo "✅ CRD $crd is available"
+                  break
+                fi
+                
+                if [ $attempt -eq $MAX_ATTEMPTS ]; then
+                  echo "❌ CRD $crd not available after $MAX_ATTEMPTS attempts"
+                  exit 1
+                fi
+                
+                # Exponential backoff
+                delay=$((BASE_DELAY * (2 ** (attempt - 1))))
+                if [ $delay -gt 300 ]; then
+                  delay=300
+                fi
+                
+                echo "⏳ Attempt $attempt/$MAX_ATTEMPTS failed, waiting ${delay}s before retry..."
+                sleep $delay
+              done
+            done
+            
+            echo "🔗 Verifying Tekton webhook service with exponential backoff..."
+            
+            # Webhook verification with exponential backoff
+            WEBHOOK_MAX_ATTEMPTS=10
+            WEBHOOK_BASE_DELAY=10
+            
+            for attempt in $(seq 1 $WEBHOOK_MAX_ATTEMPTS); do
+              # Check if webhook service exists and is ready
+              if kubectl get svc -n tekton-pipelines tekton-pipelines-webhook >/dev/null 2>&1; then
+                echo "✅ Tekton webhook service found"
+                
+                # Wait for webhook pods to be ready
+                if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=tekton-pipelines-webhook -n tekton-pipelines --timeout=60s 2>/dev/null; then
+                  echo "✅ Tekton webhook pods are ready"
+                  break
+                else
+                  echo "⏳ Webhook pods not ready yet, continuing..."
+                fi
+              fi
+              
+              if [ $attempt -eq $WEBHOOK_MAX_ATTEMPTS ]; then
+                echo "❌ Tekton webhook service not ready after $WEBHOOK_MAX_ATTEMPTS attempts"
+                echo "⚠️ Continuing without webhook verification (non-critical)"
+                break
+              fi
+              
+              # Exponential backoff: 10s, 20s, 40s, 80s, 160s, 300s (max 300s)
+              webhook_delay=$((WEBHOOK_BASE_DELAY * (2 ** (attempt - 1))))
+              if [ $webhook_delay -gt 300 ]; then
+                webhook_delay=300
+              fi
+              
+              echo "⏳ Attempt $attempt/$WEBHOOK_MAX_ATTEMPTS, waiting ${webhook_delay}s before retry..."
+              sleep $webhook_delay
+            done
             # Note: EventListener CRD is part of Tekton Triggers which is not included in the base chart
             
             echo "✅ All CRDs are now available!"
