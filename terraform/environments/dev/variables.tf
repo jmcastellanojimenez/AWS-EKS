@@ -252,13 +252,13 @@ variable "enable_mimir" {
 variable "enable_loki" {
   description = "Enable Loki"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_tempo" {
   description = "Enable Tempo"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_grafana" {
@@ -305,12 +305,12 @@ variable "grafana_resources" {
   })
   default = {
     requests = {
-      cpu    = "100m"
-      memory = "128Mi"
+      cpu    = "500m"
+      memory = "1Gi"
     }
     limits = {
-      cpu    = "200m"
-      memory = "256Mi"
+      cpu    = "1000m"
+      memory = "2Gi"
     }
   }
 }

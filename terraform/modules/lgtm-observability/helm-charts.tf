@@ -214,6 +214,11 @@ resource "helm_release" "grafana" {
   timeout    = 900  # Extended timeout for SPOT instances (15 minutes)
   wait       = true
   wait_for_jobs = false
+  
+  # Force cleanup on failure
+  replace = true
+  cleanup_on_fail = true
+  force_update = true
 
   values = [yamlencode({
     # Service account
@@ -438,6 +443,11 @@ resource "helm_release" "loki" {
   timeout    = 600  # Increased timeout for Loki
   wait       = true
   wait_for_jobs = false
+  
+  # Force cleanup on failure
+  replace = true
+  cleanup_on_fail = true
+  force_update = true
 
   values = [yamlencode({
     # Loki configuration
@@ -610,6 +620,14 @@ resource "helm_release" "tempo" {
   chart      = "tempo-distributed"
   version    = local.chart_versions.tempo
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  timeout    = 600
+  wait       = true
+  wait_for_jobs = false
+  
+  # Force cleanup on failure
+  replace = true
+  cleanup_on_fail = true
+  force_update = true
 
   values = [yamlencode({
     # Global settings
