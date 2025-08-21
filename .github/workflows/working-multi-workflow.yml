@@ -168,37 +168,18 @@ jobs:
 
       - name: 📈 Workflow 3 - LGTM Observability
         if: steps.validate.outputs.deploy-3 == 'true'
-        working-directory: terraform/environments/${{ inputs.environment }}
+        working-directory: terraform/environments/${{ inputs.environment }}/03-lgtm
         run: |
           echo "📈 Deploying LGTM Observability..."
-          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/lgtm-terraform.tfstate" -backend-config="region=us-east-1"
           
-          # First, clean up any tainted Loki/Tempo resources that shouldn't exist
-          echo "🧹 Cleaning up disabled components..."
-          terraform state list | grep -E "(loki|tempo|mimir)" | grep -v grafana || true
-          
-          # Remove ALL disabled component resources from state  
-          echo "🗑️ Removing all Loki resources from state..."
-          terraform state list | grep "loki" | xargs -r terraform state rm || true
-          
-          echo "🗑️ Removing all Tempo resources from state..."
-          terraform state list | grep "tempo" | xargs -r terraform state rm || true
-          
-          echo "🗑️ Removing all Mimir resources from state..."  
-          terraform state list | grep "mimir" | xargs -r terraform state rm || true
-          
-          # FORCE minimal LGTM stack - only Prometheus + Grafana
-          echo "🔧 Forcing minimal LGTM configuration..."
-          terraform plan -out=tfplan -target=module.lgtm_observability \
-            -var="enable_loki=false" \
-            -var="enable_tempo=false" \
-            -var="enable_mimir=false" \
-            -var="enable_prometheus=true" \
-            -var="enable_grafana=true"
+          # Deploy standalone LGTM stack (Prometheus + Grafana only)
+          echo "🔧 Deploying standalone LGTM configuration..."
+          terraform plan -out=tfplan
           terraform apply -auto-approve tfplan
           
-          # Get cluster name and verify
-          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          # Get cluster name from convention
+          cluster_name="eks-platform-${{ inputs.environment }}-cluster"
           if [[ -n "$cluster_name" ]]; then
             aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
             
