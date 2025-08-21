@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [validate-inputs, workflow-1-foundation]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-2 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-2 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -228,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-3 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success') && (needs.validate-inputs.outputs.workflow-2 == 'false' || needs.workflow-2-ingress.outputs.status == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-3 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success') && (needs.validate-inputs.outputs.workflow-2 == 'false' || needs.workflow-2-ingress.result == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -291,7 +291,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-4 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-4 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -366,7 +366,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-5 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-5 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -428,7 +428,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-5-security]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-6 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-6 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -491,7 +491,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops, workflow-5-security, workflow-6-service-mesh]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-7 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.outputs.status == 'success')
+    if: always() && needs.validate-inputs.outputs.should-proceed == 'true' && needs.validate-inputs.outputs.workflow-7 == 'true' && (needs.validate-inputs.outputs.workflow-1 == 'false' || needs.workflow-1-foundation.result == 'success')
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
