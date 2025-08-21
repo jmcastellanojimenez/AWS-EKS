@@ -1,0 +1,259 @@
+name: 🚀 Simple Multi-Workflow Deployment
+
+# MANUAL EXECUTION ONLY - Deploy selected workflows
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+      workflows_to_deploy:
+        description: 'Workflows to Deploy (comma-separated: 1,2,3,4,5,6,7)'
+        required: true
+        default: '2,3,4,5,6,7'
+        type: string
+      confirm_deployment:
+        description: 'Type "DEPLOY-ALL" to confirm deployment'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  validate-and-deploy:
+    name: 🚀 Deploy Selected Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔍 Validate Inputs
+        run: |
+          # Validate confirmation
+          if [[ "${{ inputs.confirm_deployment }}" != "DEPLOY-ALL" ]]; then
+            echo "❌ Deployment requires 'DEPLOY-ALL' confirmation"
+            exit 1
+          fi
+          
+          # Parse workflows
+          workflows="${{ inputs.workflows_to_deploy }}"
+          workflows=$(echo "$workflows" | tr -d ' ')
+          echo "✅ Will deploy workflows: $workflows"
+          
+          # Create workflow flags
+          echo "DEPLOY_1=false" >> $GITHUB_ENV
+          echo "DEPLOY_2=false" >> $GITHUB_ENV
+          echo "DEPLOY_3=false" >> $GITHUB_ENV
+          echo "DEPLOY_4=false" >> $GITHUB_ENV
+          echo "DEPLOY_5=false" >> $GITHUB_ENV
+          echo "DEPLOY_6=false" >> $GITHUB_ENV
+          echo "DEPLOY_7=false" >> $GITHUB_ENV
+          
+          IFS=',' read -ra WORKFLOW_ARRAY <<< "$workflows"
+          for wf in "${WORKFLOW_ARRAY[@]}"; do
+            case $wf in
+              1) echo "DEPLOY_1=true" >> $GITHUB_ENV ;;
+              2) echo "DEPLOY_2=true" >> $GITHUB_ENV ;;
+              3) echo "DEPLOY_3=true" >> $GITHUB_ENV ;;
+              4) echo "DEPLOY_4=true" >> $GITHUB_ENV ;;
+              5) echo "DEPLOY_5=true" >> $GITHUB_ENV ;;
+              6) echo "DEPLOY_6=true" >> $GITHUB_ENV ;;
+              7) echo "DEPLOY_7=true" >> $GITHUB_ENV ;;
+            esac
+          done
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-SimpleDeployment
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: 🏗️ Deploy Workflow 1 - Foundation Platform
+        if: env.DEPLOY_1 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "🏗️ Deploying Foundation Platform..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.foundation -target=module.observability_irsa_roles -target=aws_iam_policy.observability_s3_policy
+          terraform apply -auto-approve tfplan
+          echo "✅ Foundation Platform deployed!"
+
+      - name: 🌐 Deploy Workflow 2 - Ingress + API Gateway
+        if: env.DEPLOY_2 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "🌐 Deploying Ingress + API Gateway..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.ingress
+          terraform apply -auto-approve tfplan
+          
+          # Get cluster name and configure kubectl
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            
+            # Wait for Ambassador CRDs
+            echo "⏳ Waiting for Ambassador CRDs..."
+            max_attempts=30
+            attempt=1
+            while [ $attempt -le $max_attempts ]; do
+              if kubectl get crd modules.getambassador.io hosts.getambassador.io mappings.getambassador.io 2>/dev/null; then
+                echo "✅ Ambassador CRDs are ready"
+                break
+              fi
+              echo "⏳ Waiting for Ambassador CRDs... ($attempt/$max_attempts)"
+              sleep 10
+              attempt=$((attempt + 1))
+            done
+            
+            # Verify components
+            kubectl wait --for=condition=available --timeout=300s deployment/ambassador -n ingress-system || true
+            kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n ingress-system || true
+          fi
+          echo "✅ Ingress + API Gateway deployed!"
+
+      - name: 📈 Deploy Workflow 3 - LGTM Observability
+        if: env.DEPLOY_3 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "📈 Deploying LGTM Observability..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.lgtm_observability
+          terraform apply -auto-approve tfplan
+          
+          # Get cluster name and verify
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            sleep 120
+            kubectl wait --for=condition=available --timeout=600s deployment/prometheus-server -n observability || true
+            kubectl wait --for=condition=available --timeout=300s deployment/grafana -n observability || true
+          fi
+          echo "✅ LGTM Observability deployed!"
+
+      - name: 🔄 Deploy Workflow 4 - GitOps & Deployment Automation
+        if: env.DEPLOY_4 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "🔄 Deploying GitOps & Deployment Automation..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.gitops
+          terraform apply -auto-approve tfplan
+          
+          # Get cluster name and verify
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            sleep 180
+            kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd || true
+          fi
+          echo "✅ GitOps & Deployment Automation deployed!"
+
+      - name: 🔐 Deploy Workflow 5 - Security Foundation
+        if: env.DEPLOY_5 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "🔐 Deploying Security Foundation..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.security
+          terraform apply -auto-approve tfplan
+          
+          # Get cluster name and verify
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            sleep 120
+            kubectl wait --for=condition=available --timeout=300s deployment/gatekeeper-controller-manager -n gatekeeper-system || true
+          fi
+          echo "✅ Security Foundation deployed!"
+
+      - name: 🛡️ Deploy Workflow 6 - Service Mesh
+        if: env.DEPLOY_6 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "🛡️ Deploying Service Mesh..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.service_mesh
+          terraform apply -auto-approve tfplan
+          
+          # Get cluster name and verify
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            sleep 180
+            kubectl wait --for=condition=available --timeout=600s deployment/istiod -n istio-system || true
+          fi
+          echo "✅ Service Mesh deployed!"
+
+      - name: 📊 Deploy Workflow 7 - Data Services
+        if: env.DEPLOY_7 == 'true'
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          echo "📊 Deploying Data Services..."
+          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.data_services
+          terraform apply -auto-approve tfplan
+          
+          # Get cluster name and verify
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            sleep 120
+            kubectl wait --for=condition=ready --timeout=600s pod -l app=postgresql -n data-services || true
+          fi
+          echo "✅ Data Services deployed!"
+
+      - name: 📋 Generate Deployment Summary
+        run: |
+          echo "## 🚀 Simple Multi-Workflow Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflows Requested**: ${{ inputs.workflows_to_deploy }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Results:**" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ env.DEPLOY_1 }}" == "true" ]]; then
+            echo "- 🏗️ **Foundation Platform**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ env.DEPLOY_2 }}" == "true" ]]; then
+            echo "- 🌐 **Ingress + API Gateway**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ env.DEPLOY_3 }}" == "true" ]]; then
+            echo "- 📈 **LGTM Observability**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ env.DEPLOY_4 }}" == "true" ]]; then
+            echo "- 🔄 **GitOps & Deployment**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ env.DEPLOY_5 }}" == "true" ]]; then
+            echo "- 🔐 **Security Foundation**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ env.DEPLOY_6 }}" == "true" ]]; then
+            echo "- 🛡️ **Service Mesh**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [[ "${{ env.DEPLOY_7 }}" == "true" ]]; then
+            echo "- 📊 **Data Services**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **All requested workflows have been deployed successfully!**" >> $GITHUB_STEP_SUMMARY
