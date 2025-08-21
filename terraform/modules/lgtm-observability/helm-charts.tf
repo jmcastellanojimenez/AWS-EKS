@@ -211,6 +211,9 @@ resource "helm_release" "grafana" {
   chart      = "grafana"
   version    = local.chart_versions.grafana
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  timeout    = 900  # Extended timeout for SPOT instances (15 minutes)
+  wait       = true
+  wait_for_jobs = false
 
   values = [yamlencode({
     # Service account
@@ -290,31 +293,31 @@ resource "helm_release" "grafana" {
       }
     }
 
-    # Pre-configured dashboards
-    dashboards = {
-      default = {
-        kubernetes-cluster = {
-          gnetId = 7249
-          revision = 1
-          datasource = "Prometheus"
-        }
-        kubernetes-pods = {
-          gnetId = 6336
-          revision = 1
-          datasource = "Prometheus"
-        }
-        spring-boot = {
-          gnetId = 12900
-          revision = 1
-          datasource = "Prometheus"
-        }
-        ambassador-dashboard = {
-          gnetId = 13758
-          revision = 1
-          datasource = "Prometheus"
-        }
-      }
-    }
+    # Pre-configured dashboards - DISABLED for SPOT instances to avoid timeout
+    # dashboards = {
+    #   default = {
+    #     kubernetes-cluster = {
+    #       gnetId = 7249
+    #       revision = 1
+    #       datasource = "Prometheus"
+    #     }
+    #     kubernetes-pods = {
+    #       gnetId = 6336
+    #       revision = 1
+    #       datasource = "Prometheus"
+    #     }
+    #     spring-boot = {
+    #       gnetId = 12900
+    #       revision = 1
+    #       datasource = "Prometheus"
+    #     }
+    #     ambassador-dashboard = {
+    #       gnetId = 13758
+    #       revision = 1
+    #       datasource = "Prometheus"
+    #     }
+    #   }
+    # }
 
     # Service configuration
     service = {
@@ -327,6 +330,43 @@ resource "helm_release" "grafana" {
       runAsNonRoot = true
       runAsUser = 472
       fsGroup = 472
+    }
+
+    # SPOT instance optimizations
+    nodeSelector = var.environment == "dev" ? {
+      "kubernetes.io/arch" = "amd64"
+    } : {}
+
+    tolerations = var.environment == "dev" ? [
+      {
+        key = "kubernetes.io/arch"
+        operator = "Equal"
+        value = "amd64"
+        effect = "NoSchedule"
+      }
+    ] : []
+
+    # Startup and readiness probes optimized for SPOT instances
+    livenessProbe = {
+      httpGet = {
+        path = "/api/health"
+        port = 3000
+      }
+      initialDelaySeconds = 120  # Extended delay for SPOT instances
+      periodSeconds = 30
+      timeoutSeconds = 10
+      failureThreshold = 5
+    }
+
+    readinessProbe = {
+      httpGet = {
+        path = "/api/health"
+        port = 3000
+      }
+      initialDelaySeconds = 60   # Extended delay for SPOT instances
+      periodSeconds = 10
+      timeoutSeconds = 5
+      failureThreshold = 10
     }
 
     # Environment variables
