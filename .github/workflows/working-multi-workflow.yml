@@ -172,6 +172,16 @@ jobs:
         run: |
           echo "📈 Deploying LGTM Observability..."
           terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
+          
+          # First, clean up any tainted Loki/Tempo resources that shouldn't exist
+          echo "🧹 Cleaning up disabled components..."
+          terraform state list | grep -E "(loki|tempo|mimir)" | grep -v grafana || true
+          
+          # Remove tainted resources that are disabled
+          terraform state list | grep "helm_release.loki" && terraform state rm module.lgtm_observability.helm_release.loki[0] || true
+          terraform state list | grep "helm_release.tempo" && terraform state rm module.lgtm_observability.helm_release.tempo[0] || true
+          terraform state list | grep "helm_release.mimir" && terraform state rm module.lgtm_observability.helm_release.mimir[0] || true
+          
           terraform plan -out=tfplan -target=module.lgtm_observability
           terraform apply -auto-approve tfplan
           
