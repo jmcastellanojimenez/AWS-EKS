@@ -130,3 +130,16 @@ azure/
 *.pid
 *.seed
 *.pid.lock
+
+# Claude Code / AI Assistant Files
+.claude/
+CLAUDE.md
+*.md.bak
+
+# Test/Development Files
+get-pip.py
+*-test-*.json
+*-test-*.md
+test-execution-report.md
+*-report.md
+*-results.json
