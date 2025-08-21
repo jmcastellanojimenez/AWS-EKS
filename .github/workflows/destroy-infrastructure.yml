@@ -52,11 +52,15 @@ on:
         type: boolean
         default: true
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ${{ secrets.AWS_REGION }}
   ENVIRONMENT: ${{ inputs.environment }}
   TF_VAR_environment: ${{ inputs.environment }}
-  TERRAFORM_VERSION: "1.5.7"
+  TERRAFORM_VERSION: "1.6.0"
 
 jobs:
   validate-destruction:
