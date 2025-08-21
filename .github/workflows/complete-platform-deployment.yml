@@ -566,20 +566,23 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           role-session-name: GitHubActions-CompleteDeployment
 
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
       - name: 🔧 Configure kubectl
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
-          # Get cluster name from Terraform state or previous workflow
-          if [[ "${{ needs.validate-inputs.outputs.workflow-1 }}" == "true" ]] && [[ "${{ needs.workflow-1-foundation.result }}" == "success" ]]; then
-            cluster_name="${{ needs.workflow-1-foundation.outputs.cluster-name }}"
-            echo "✅ Using cluster name from Foundation workflow: $cluster_name"
+          # Always get cluster name from Terraform state since Foundation may be skipped
+          echo "🔍 Getting cluster name from Terraform state..."
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate" -input=false > /dev/null 2>&1
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            echo "✅ Found cluster name in Terraform state: $cluster_name"
           else
-            echo "🔍 Getting cluster name from Terraform state..."
-            terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate" -input=false > /dev/null 2>&1
-            cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
-            if [[ -n "$cluster_name" ]]; then
-              echo "✅ Found cluster name in Terraform state: $cluster_name"
-            fi
+            echo "❌ No cluster found in Terraform state"
           fi
           
           if [[ -n "$cluster_name" ]]; then
