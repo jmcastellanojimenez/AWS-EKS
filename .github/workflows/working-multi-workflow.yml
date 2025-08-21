@@ -104,9 +104,32 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🏗️ Deploying Foundation Platform..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.foundation -target=module.observability_irsa_roles -target=aws_iam_policy.observability_s3_policy
           terraform apply -auto-approve tfplan
+          
+          # Verify EKS cluster and nodes are ready
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          if [[ -n "$cluster_name" ]]; then
+            echo "⏳ Configuring kubectl and waiting for nodes..."
+            aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+            
+            # Wait for nodes to be ready (max 5 minutes)
+            echo "⏳ Waiting for nodes to join cluster..."
+            max_attempts=30
+            attempt=1
+            while [ $attempt -le $max_attempts ]; do
+              ready_nodes=$(kubectl get nodes --no-headers 2>/dev/null | grep -c Ready || echo "0")
+              if [ "$ready_nodes" -ge "2" ]; then
+                echo "✅ $ready_nodes nodes are ready"
+                kubectl get nodes
+                break
+              fi
+              echo "⏳ Waiting for nodes... ($ready_nodes ready, attempt $attempt/$max_attempts)"
+              sleep 10
+              attempt=$((attempt + 1))
+            done
+          fi
           echo "✅ Foundation Platform deployed!"
 
       - name: 🌐 Workflow 2 - Ingress + API Gateway
@@ -114,7 +137,7 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🌐 Deploying Ingress + API Gateway..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.ingress
           terraform apply -auto-approve tfplan
           
@@ -148,7 +171,7 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "📈 Deploying LGTM Observability..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.lgtm_observability
           terraform apply -auto-approve tfplan
           
@@ -156,9 +179,28 @@ jobs:
           cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
           if [[ -n "$cluster_name" ]]; then
             aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
-            sleep 120
-            kubectl wait --for=condition=available --timeout=600s deployment/prometheus-server -n observability || true
+            
+            # Check pod status before waiting
+            echo "📊 Checking LGTM pod status..."
+            kubectl get pods -n observability || true
+            kubectl get deployments -n observability || true
+            
+            # Check node resources
+            echo "📊 Checking node resources..."
+            kubectl top nodes || true
+            kubectl get nodes -o wide || true
+            
+            # Only wait for enabled components (Prometheus and Grafana based on tfvars)
+            echo "⏳ Waiting for Prometheus..."
+            kubectl wait --for=condition=available --timeout=300s deployment/prometheus-server -n observability || true
+            
+            echo "⏳ Waiting for Grafana..."
             kubectl wait --for=condition=available --timeout=300s deployment/grafana -n observability || true
+            
+            # Verify final status
+            echo "✅ Final LGTM component status:"
+            kubectl get pods -n observability
+            kubectl get svc -n observability
           fi
           echo "✅ LGTM Observability deployed!"
 
@@ -167,7 +209,7 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🔄 Deploying GitOps & Deployment Automation..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.gitops
           terraform apply -auto-approve tfplan
           
@@ -185,7 +227,7 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🔐 Deploying Security Foundation..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.security
           terraform apply -auto-approve tfplan
           
@@ -203,7 +245,7 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🛡️ Deploying Service Mesh..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.service_mesh
           terraform apply -auto-approve tfplan
           
@@ -221,7 +263,7 @@ jobs:
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "📊 Deploying Data Services..."
-          terraform init -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate"
+          terraform init -reconfigure -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=eks-platform/${{ inputs.environment }}/terraform.tfstate" -backend-config="region=us-east-1"
           terraform plan -out=tfplan -target=module.data_services
           terraform apply -auto-approve tfplan
           
