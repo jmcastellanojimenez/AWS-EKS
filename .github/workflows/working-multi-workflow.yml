@@ -1,6 +1,5 @@
-name: 🚀 Simple Multi-Workflow Deployment
+name: 🚀 Working Multi-Workflow Deployment
 
-# MANUAL EXECUTION ONLY - Deploy selected workflows
 on:
   workflow_dispatch:
     inputs:
@@ -32,16 +31,17 @@ env:
   AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-  validate-and-deploy:
+  deploy-workflows:
     name: 🚀 Deploy Selected Workflows
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     environment: ${{ inputs.environment }}
     steps:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: 🔍 Validate Inputs
+      - name: 🔍 Validate and Parse Input
+        id: validate
         run: |
           # Validate confirmation
           if [[ "${{ inputs.confirm_deployment }}" != "DEPLOY-ALL" ]]; then
@@ -54,34 +54,44 @@ jobs:
           workflows=$(echo "$workflows" | tr -d ' ')
           echo "✅ Will deploy workflows: $workflows"
           
-          # Create workflow flags
-          echo "DEPLOY_1=false" >> $GITHUB_ENV
-          echo "DEPLOY_2=false" >> $GITHUB_ENV
-          echo "DEPLOY_3=false" >> $GITHUB_ENV
-          echo "DEPLOY_4=false" >> $GITHUB_ENV
-          echo "DEPLOY_5=false" >> $GITHUB_ENV
-          echo "DEPLOY_6=false" >> $GITHUB_ENV
-          echo "DEPLOY_7=false" >> $GITHUB_ENV
+          # Create flags
+          deploy_1="false"
+          deploy_2="false"
+          deploy_3="false"
+          deploy_4="false"
+          deploy_5="false"
+          deploy_6="false"
+          deploy_7="false"
           
           IFS=',' read -ra WORKFLOW_ARRAY <<< "$workflows"
           for wf in "${WORKFLOW_ARRAY[@]}"; do
             case $wf in
-              1) echo "DEPLOY_1=true" >> $GITHUB_ENV ;;
-              2) echo "DEPLOY_2=true" >> $GITHUB_ENV ;;
-              3) echo "DEPLOY_3=true" >> $GITHUB_ENV ;;
-              4) echo "DEPLOY_4=true" >> $GITHUB_ENV ;;
-              5) echo "DEPLOY_5=true" >> $GITHUB_ENV ;;
-              6) echo "DEPLOY_6=true" >> $GITHUB_ENV ;;
-              7) echo "DEPLOY_7=true" >> $GITHUB_ENV ;;
+              1) deploy_1="true" ;;
+              2) deploy_2="true" ;;
+              3) deploy_3="true" ;;
+              4) deploy_4="true" ;;
+              5) deploy_5="true" ;;
+              6) deploy_6="true" ;;
+              7) deploy_7="true" ;;
             esac
           done
+          
+          echo "deploy-1=$deploy_1" >> $GITHUB_OUTPUT
+          echo "deploy-2=$deploy_2" >> $GITHUB_OUTPUT
+          echo "deploy-3=$deploy_3" >> $GITHUB_OUTPUT
+          echo "deploy-4=$deploy_4" >> $GITHUB_OUTPUT
+          echo "deploy-5=$deploy_5" >> $GITHUB_OUTPUT
+          echo "deploy-6=$deploy_6" >> $GITHUB_OUTPUT
+          echo "deploy-7=$deploy_7" >> $GITHUB_OUTPUT
+          
+          echo "✅ Workflow flags: 1=$deploy_1, 2=$deploy_2, 3=$deploy_3, 4=$deploy_4, 5=$deploy_5, 6=$deploy_6, 7=$deploy_7"
 
       - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: GitHubActions-SimpleDeployment
+          role-session-name: GitHubActions-WorkingDeployment
 
       - name: 🏗️ Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -89,8 +99,8 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: 🏗️ Deploy Workflow 1 - Foundation Platform
-        if: env.DEPLOY_1 == 'true'
+      - name: 🏗️ Workflow 1 - Foundation Platform
+        if: steps.validate.outputs.deploy-1 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🏗️ Deploying Foundation Platform..."
@@ -99,8 +109,8 @@ jobs:
           terraform apply -auto-approve tfplan
           echo "✅ Foundation Platform deployed!"
 
-      - name: 🌐 Deploy Workflow 2 - Ingress + API Gateway
-        if: env.DEPLOY_2 == 'true'
+      - name: 🌐 Workflow 2 - Ingress + API Gateway
+        if: steps.validate.outputs.deploy-2 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🌐 Deploying Ingress + API Gateway..."
@@ -133,8 +143,8 @@ jobs:
           fi
           echo "✅ Ingress + API Gateway deployed!"
 
-      - name: 📈 Deploy Workflow 3 - LGTM Observability
-        if: env.DEPLOY_3 == 'true'
+      - name: 📈 Workflow 3 - LGTM Observability
+        if: steps.validate.outputs.deploy-3 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "📈 Deploying LGTM Observability..."
@@ -152,8 +162,8 @@ jobs:
           fi
           echo "✅ LGTM Observability deployed!"
 
-      - name: 🔄 Deploy Workflow 4 - GitOps & Deployment Automation
-        if: env.DEPLOY_4 == 'true'
+      - name: 🔄 Workflow 4 - GitOps & Deployment Automation
+        if: steps.validate.outputs.deploy-4 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🔄 Deploying GitOps & Deployment Automation..."
@@ -170,8 +180,8 @@ jobs:
           fi
           echo "✅ GitOps & Deployment Automation deployed!"
 
-      - name: 🔐 Deploy Workflow 5 - Security Foundation
-        if: env.DEPLOY_5 == 'true'
+      - name: 🔐 Workflow 5 - Security Foundation
+        if: steps.validate.outputs.deploy-5 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🔐 Deploying Security Foundation..."
@@ -188,8 +198,8 @@ jobs:
           fi
           echo "✅ Security Foundation deployed!"
 
-      - name: 🛡️ Deploy Workflow 6 - Service Mesh
-        if: env.DEPLOY_6 == 'true'
+      - name: 🛡️ Workflow 6 - Service Mesh
+        if: steps.validate.outputs.deploy-6 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "🛡️ Deploying Service Mesh..."
@@ -206,8 +216,8 @@ jobs:
           fi
           echo "✅ Service Mesh deployed!"
 
-      - name: 📊 Deploy Workflow 7 - Data Services
-        if: env.DEPLOY_7 == 'true'
+      - name: 📊 Workflow 7 - Data Services
+        if: steps.validate.outputs.deploy-7 == 'true'
         working-directory: terraform/environments/${{ inputs.environment }}
         run: |
           echo "📊 Deploying Data Services..."
@@ -226,34 +236,54 @@ jobs:
 
       - name: 📋 Generate Deployment Summary
         run: |
-          echo "## 🚀 Simple Multi-Workflow Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Working Multi-Workflow Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Workflows Requested**: ${{ inputs.workflows_to_deploy }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Deployment Results:**" >> $GITHUB_STEP_SUMMARY
           
-          if [[ "${{ env.DEPLOY_1 }}" == "true" ]]; then
+          if [[ "${{ steps.validate.outputs.deploy-1 }}" == "true" ]]; then
             echo "- 🏗️ **Foundation Platform**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🏗️ **Foundation Platform**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-          if [[ "${{ env.DEPLOY_2 }}" == "true" ]]; then
+          
+          if [[ "${{ steps.validate.outputs.deploy-2 }}" == "true" ]]; then
             echo "- 🌐 **Ingress + API Gateway**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🌐 **Ingress + API Gateway**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-          if [[ "${{ env.DEPLOY_3 }}" == "true" ]]; then
+          
+          if [[ "${{ steps.validate.outputs.deploy-3 }}" == "true" ]]; then
             echo "- 📈 **LGTM Observability**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 📈 **LGTM Observability**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-          if [[ "${{ env.DEPLOY_4 }}" == "true" ]]; then
+          
+          if [[ "${{ steps.validate.outputs.deploy-4 }}" == "true" ]]; then
             echo "- 🔄 **GitOps & Deployment**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🔄 **GitOps & Deployment**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-          if [[ "${{ env.DEPLOY_5 }}" == "true" ]]; then
+          
+          if [[ "${{ steps.validate.outputs.deploy-5 }}" == "true" ]]; then
             echo "- 🔐 **Security Foundation**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🔐 **Security Foundation**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-          if [[ "${{ env.DEPLOY_6 }}" == "true" ]]; then
+          
+          if [[ "${{ steps.validate.outputs.deploy-6 }}" == "true" ]]; then
             echo "- 🛡️ **Service Mesh**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🛡️ **Service Mesh**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
-          if [[ "${{ env.DEPLOY_7 }}" == "true" ]]; then
+          
+          if [[ "${{ steps.validate.outputs.deploy-7 }}" == "true" ]]; then
             echo "- 📊 **Data Services**: ✅ Deployed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 📊 **Data Services**: ⏭️ Skipped" >> $GITHUB_STEP_SUMMARY
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ **All requested workflows have been deployed successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **All requested workflows completed successfully!**" >> $GITHUB_STEP_SUMMARY
