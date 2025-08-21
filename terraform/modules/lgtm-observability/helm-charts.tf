@@ -378,8 +378,8 @@ resource "helm_release" "grafana" {
     kubernetes_namespace.observability,
     kubernetes_service_account.grafana,
     kubernetes_secret.grafana_credentials,
-    helm_release.prometheus,
-    helm_release.loki  # Deploy Grafana after all data sources
+    helm_release.prometheus
+    # Removed loki dependency since it's disabled by default
   ]
 }
 

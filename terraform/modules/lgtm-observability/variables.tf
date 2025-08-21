@@ -125,19 +125,19 @@ variable "s3_expiration_days" {
 variable "enable_mimir" {
   description = "Enable Mimir for long-term metrics storage"
   type        = bool
-  default     = true
+  default     = false  # Disabled by default for stability
 }
 
 variable "enable_loki" {
   description = "Enable Loki for log aggregation"
   type        = bool
-  default     = true
+  default     = false  # Disabled by default for stability
 }
 
 variable "enable_tempo" {
   description = "Enable Tempo for distributed tracing"
   type        = bool
-  default     = true
+  default     = false  # Disabled by default for stability
 }
 
 variable "enable_prometheus" {
