@@ -151,16 +151,35 @@ jobs:
           terraform plan -out=tfplan -target=module.ingress
           terraform apply -auto-approve tfplan
           
-          # Wait for ingress controllers to be ready
-          echo "⏳ Waiting for ingress controllers..."
-          sleep 180
-          
-          # Update kubeconfig and verify
+          # Update kubeconfig first
           aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
           
+          # Wait for Ambassador CRDs to be established
+          echo "⏳ Waiting for Ambassador CRDs to be established..."
+          max_attempts=30
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+            if kubectl get crd modules.getambassador.io hosts.getambassador.io mappings.getambassador.io 2>/dev/null; then
+              echo "✅ Ambassador CRDs are ready"
+              break
+            fi
+            echo "⏳ Waiting for Ambassador CRDs... ($attempt/$max_attempts)"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          
+          # Wait for cert-manager CRDs
+          echo "⏳ Waiting for cert-manager CRDs..."
+          kubectl wait --for condition=established --timeout=300s crd/certificates.cert-manager.io || true
+          kubectl wait --for condition=established --timeout=300s crd/clusterissuers.cert-manager.io || true
+          
+          # Wait for ingress controllers to be ready
+          echo "⏳ Waiting for ingress controllers..."
+          sleep 120
+          
           # Verify ingress components
-          kubectl wait --for=condition=available --timeout=300s deployment/ambassador -n ambassador || true
-          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager || true
+          kubectl wait --for=condition=available --timeout=300s deployment/ambassador -n ingress-system || true
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n ingress-system || true
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ Ingress + API Gateway deployed successfully!"
