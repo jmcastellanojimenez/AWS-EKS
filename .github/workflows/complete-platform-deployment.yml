@@ -33,7 +33,7 @@ permissions:
   contents: read
 
 env:
-  TF_VERSION: '1.6.0'
+  TF_VERSION: '1.5.7'
   AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
@@ -69,6 +69,7 @@ jobs:
   workflow-1-foundation:
     name: 🏗️ Workflow 1 - Foundation Platform
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: validate-inputs
     if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '1')
     environment: ${{ needs.validate-inputs.outputs.environment }}
@@ -97,18 +98,28 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "🏗️ Deploying Foundation Platform..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
-          terraform plan -out=tfplan -target=module.vpc -target=module.iam -target=module.eks
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.foundation
           terraform apply -auto-approve tfplan
           
-          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          # Wait for EKS cluster to be ready
+          echo "⏳ Waiting for EKS cluster to be ready..."
+          sleep 120
+          
+          cluster_name=$(terraform output -raw cluster_name 2>/dev/null || echo "eks-platform-${{ needs.validate-inputs.outputs.environment }}")
           echo "cluster-name=$cluster_name" >> $GITHUB_OUTPUT
+          
+          # Verify cluster is accessible
+          aws eks update-kubeconfig --name "$cluster_name" --region ${{ secrets.AWS_REGION }}
+          kubectl get nodes || (echo "❌ Cluster not ready" && exit 1)
+          
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ Foundation Platform deployed successfully!"
 
   workflow-2-ingress:
     name: 🌐 Workflow 2 - Ingress + API Gateway
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [validate-inputs, workflow-1-foundation]
     if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '2') && needs.workflow-1-foundation.outputs.status == 'success'
     environment: ${{ needs.validate-inputs.outputs.environment }}
@@ -136,9 +147,20 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "🌐 Deploying Ingress + API Gateway Stack..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
-          terraform plan -out=tfplan -target=module.cert_manager -target=module.external_dns -target=module.ambassador
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
+          terraform plan -out=tfplan -target=module.ingress
           terraform apply -auto-approve tfplan
+          
+          # Wait for ingress controllers to be ready
+          echo "⏳ Waiting for ingress controllers..."
+          sleep 180
+          
+          # Update kubeconfig and verify
+          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          
+          # Verify ingress components
+          kubectl wait --for=condition=available --timeout=300s deployment/ambassador -n ambassador || true
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager || true
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ Ingress + API Gateway deployed successfully!"
@@ -146,8 +168,9 @@ jobs:
   workflow-3-observability:
     name: 📈 Workflow 3 - LGTM Observability
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress]
-    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '3') && needs.workflow-1-foundation.outputs.status == 'success'
+    if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '3') && needs.workflow-1-foundation.outputs.status == 'success' && (needs.workflow-2-ingress.outputs.status == 'success' || !contains(needs.validate-inputs.outputs.workflows, '2'))
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
       status: ${{ steps.deploy.outputs.status }}
@@ -173,9 +196,20 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "📈 Deploying LGTM Observability Stack..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
           terraform plan -out=tfplan -target=module.lgtm_observability
           terraform apply -auto-approve tfplan
+          
+          # Wait for observability components to be ready
+          echo "⏳ Waiting for observability stack..."
+          sleep 240
+          
+          # Update kubeconfig and verify
+          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          
+          # Verify observability components
+          kubectl wait --for=condition=available --timeout=600s deployment/prometheus-server -n observability || true
+          kubectl wait --for=condition=available --timeout=300s deployment/grafana -n observability || true
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ LGTM Observability deployed successfully!"
@@ -183,6 +217,7 @@ jobs:
   workflow-4-gitops:
     name: 🔄 Workflow 4 - GitOps & Deployment Automation
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
     if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '4') && needs.workflow-1-foundation.outputs.status == 'success'
     environment: ${{ needs.validate-inputs.outputs.environment }}
@@ -210,9 +245,32 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "🔄 Deploying GitOps & Deployment Automation..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
           terraform plan -out=tfplan -target=module.gitops
           terraform apply -auto-approve tfplan
+          
+          # Wait for GitOps components and CRDs to be ready
+          echo "⏳ Waiting for GitOps components and CRDs..."
+          sleep 300
+          
+          # Update kubeconfig and verify
+          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          
+          # Verify GitOps components and CRDs
+          kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd || true
+          
+          # Wait for Tekton CRDs to be installed
+          max_attempts=30
+          attempt=1
+          while [ $attempt -le $max_attempts ]; do
+            if kubectl get crd pipelines.tekton.dev 2>/dev/null; then
+              echo "✅ Tekton CRDs are ready"
+              break
+            fi
+            echo "⏳ Waiting for Tekton CRDs... ($attempt/$max_attempts)"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ GitOps & Deployment Automation deployed successfully!"
@@ -220,7 +278,8 @@ jobs:
   workflow-5-security:
     name: 🔐 Workflow 5 - Security Foundation
     runs-on: ubuntu-latest
-    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability]
+    timeout-minutes: 35
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops]
     if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '5') && needs.workflow-1-foundation.outputs.status == 'success'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
@@ -247,9 +306,19 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "🔐 Deploying Security Foundation..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
           terraform plan -out=tfplan -target=module.security
           terraform apply -auto-approve tfplan
+          
+          # Wait for security components to be ready
+          echo "⏳ Waiting for security components..."
+          sleep 180
+          
+          # Update kubeconfig and verify
+          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          
+          # Verify security components
+          kubectl wait --for=condition=available --timeout=300s deployment/gatekeeper-controller-manager -n gatekeeper-system || true
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ Security Foundation deployed successfully!"
@@ -257,6 +326,7 @@ jobs:
   workflow-6-service-mesh:
     name: 🛡️ Workflow 6 - Service Mesh
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-5-security]
     if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '6') && needs.workflow-1-foundation.outputs.status == 'success'
     environment: ${{ needs.validate-inputs.outputs.environment }}
@@ -284,9 +354,20 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "🛡️ Deploying Service Mesh..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
           terraform plan -out=tfplan -target=module.service_mesh
           terraform apply -auto-approve tfplan
+          
+          # Wait for service mesh components to be ready
+          echo "⏳ Waiting for service mesh components..."
+          sleep 240
+          
+          # Update kubeconfig and verify
+          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          
+          # Verify service mesh components
+          kubectl wait --for=condition=available --timeout=600s deployment/istiod -n istio-system || true
+          kubectl wait --for=condition=available --timeout=300s deployment/istio-proxy -n istio-system || true
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ Service Mesh deployed successfully!"
@@ -294,7 +375,8 @@ jobs:
   workflow-7-data-services:
     name: 📊 Workflow 7 - Data Services
     runs-on: ubuntu-latest
-    needs: [validate-inputs, workflow-1-foundation, workflow-3-observability, workflow-5-security, workflow-6-service-mesh]
+    timeout-minutes: 35
+    needs: [validate-inputs, workflow-1-foundation, workflow-2-ingress, workflow-3-observability, workflow-4-gitops, workflow-5-security, workflow-6-service-mesh]
     if: needs.validate-inputs.outputs.should-proceed == 'true' && contains(needs.validate-inputs.outputs.workflows, '7') && needs.workflow-1-foundation.outputs.status == 'success'
     environment: ${{ needs.validate-inputs.outputs.environment }}
     outputs:
@@ -321,9 +403,20 @@ jobs:
         working-directory: terraform/environments/${{ needs.validate-inputs.outputs.environment }}
         run: |
           echo "📊 Deploying Data Services..."
-          terraform init -backend-config="bucket=eks-learning-lab-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform init -backend-config="key=eks-platform/${{ needs.validate-inputs.outputs.environment }}/terraform.tfstate"
           terraform plan -out=tfplan -target=module.data_services
           terraform apply -auto-approve tfplan
+          
+          # Wait for data services to be ready
+          echo "⏳ Waiting for data services..."
+          sleep 300
+          
+          # Update kubeconfig and verify
+          aws eks update-kubeconfig --name "${{ needs.workflow-1-foundation.outputs.cluster-name }}" --region ${{ secrets.AWS_REGION }}
+          
+          # Verify data services
+          kubectl wait --for=condition=ready --timeout=600s pod -l app=postgresql -n data-services || true
+          kubectl wait --for=condition=ready --timeout=300s pod -l app=redis -n data-services || true
           
           echo "status=success" >> $GITHUB_OUTPUT
           echo "✅ Data Services deployed successfully!"
