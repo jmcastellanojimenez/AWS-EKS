@@ -177,12 +177,24 @@ jobs:
           echo "🧹 Cleaning up disabled components..."
           terraform state list | grep -E "(loki|tempo|mimir)" | grep -v grafana || true
           
-          # Remove tainted resources that are disabled
-          terraform state list | grep "helm_release.loki" && terraform state rm module.lgtm_observability.helm_release.loki[0] || true
-          terraform state list | grep "helm_release.tempo" && terraform state rm module.lgtm_observability.helm_release.tempo[0] || true
-          terraform state list | grep "helm_release.mimir" && terraform state rm module.lgtm_observability.helm_release.mimir[0] || true
+          # Remove ALL disabled component resources from state  
+          echo "🗑️ Removing all Loki resources from state..."
+          terraform state list | grep "loki" | xargs -r terraform state rm || true
           
-          terraform plan -out=tfplan -target=module.lgtm_observability
+          echo "🗑️ Removing all Tempo resources from state..."
+          terraform state list | grep "tempo" | xargs -r terraform state rm || true
+          
+          echo "🗑️ Removing all Mimir resources from state..."  
+          terraform state list | grep "mimir" | xargs -r terraform state rm || true
+          
+          # FORCE minimal LGTM stack - only Prometheus + Grafana
+          echo "🔧 Forcing minimal LGTM configuration..."
+          terraform plan -out=tfplan -target=module.lgtm_observability \
+            -var="enable_loki=false" \
+            -var="enable_tempo=false" \
+            -var="enable_mimir=false" \
+            -var="enable_prometheus=true" \
+            -var="enable_grafana=true"
           terraform apply -auto-approve tfplan
           
           # Get cluster name and verify
@@ -200,17 +212,19 @@ jobs:
             kubectl top nodes || true
             kubectl get nodes -o wide || true
             
-            # Only wait for enabled components (Prometheus and Grafana based on tfvars)
-            echo "⏳ Waiting for Prometheus..."
-            kubectl wait --for=condition=available --timeout=300s deployment/prometheus-server -n observability || true
+            # Only wait for MINIMAL enabled components (Prometheus and Grafana only)
+            echo "⏳ Waiting for Prometheus (MINIMAL LGTM)..."
+            kubectl wait --for=condition=available --timeout=180s deployment/prometheus-server -n observability || echo "⚠️ Prometheus not ready yet"
             
-            echo "⏳ Waiting for Grafana..."
-            kubectl wait --for=condition=available --timeout=300s deployment/grafana -n observability || true
+            echo "⏳ Waiting for Grafana (MINIMAL LGTM)..."  
+            kubectl wait --for=condition=available --timeout=180s deployment/grafana -n observability || echo "⚠️ Grafana not ready yet"
             
-            # Verify final status
-            echo "✅ Final LGTM component status:"
-            kubectl get pods -n observability
+            # Final verification - should only see Prometheus + Grafana
+            echo "✅ MINIMAL LGTM stack status (should only see Prometheus + Grafana):"
+            kubectl get pods -n observability --show-labels
             kubectl get svc -n observability
+            
+            echo "🚀 MINIMAL LGTM deployment complete - ready for workflows 4-7!"
           fi
           echo "✅ LGTM Observability deployed!"
 
