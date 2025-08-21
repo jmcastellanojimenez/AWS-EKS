@@ -154,7 +154,7 @@ resource "helm_release" "prometheus" {
 
     # Alert Manager
     alertmanager = {
-      enabled = var.enable_grafana_alerts
+      enabled = false  # Disable in dev to reduce resources
       persistentVolume = {
         enabled = local.current_env.enable_persistence
         size = "2Gi"
@@ -378,7 +378,8 @@ resource "helm_release" "grafana" {
     kubernetes_namespace.observability,
     kubernetes_service_account.grafana,
     kubernetes_secret.grafana_credentials,
-    helm_release.prometheus
+    helm_release.prometheus,
+    helm_release.loki  # Deploy Grafana after all data sources
   ]
 }
 
@@ -394,6 +395,9 @@ resource "helm_release" "loki" {
   chart      = "loki-stack"
   version    = local.chart_versions.loki
   namespace  = kubernetes_namespace.observability.metadata[0].name
+  timeout    = 600  # Increased timeout for Loki
+  wait       = true
+  wait_for_jobs = false
 
   values = [yamlencode({
     # Loki configuration
@@ -549,7 +553,8 @@ resource "helm_release" "loki" {
   depends_on = [
     kubernetes_namespace.observability,
     kubernetes_service_account.loki,
-    aws_s3_bucket.loki
+    aws_s3_bucket.loki,
+    helm_release.prometheus  # Deploy Loki after Prometheus
   ]
 }
 

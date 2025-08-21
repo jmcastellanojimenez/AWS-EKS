@@ -85,7 +85,7 @@ locals {
       replica_count           = 1
       enable_persistence     = false
       storage_class          = "gp2"
-      enable_node_exporter   = true
+      enable_node_exporter   = false  # Disable to reduce resource usage
       enable_kube_state      = true
     }
     staging = {
