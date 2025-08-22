@@ -395,7 +395,8 @@ resource "null_resource" "verify_tekton_crds" {
       tasks.tekton.dev
       taskruns.tekton.dev
       pipelineruns.tekton.dev
-    EOT)
+EOT
+    )
     timestamp = timestamp()
   }
 }
