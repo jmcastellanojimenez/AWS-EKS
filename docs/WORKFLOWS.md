@@ -30,7 +30,7 @@ Deploy, update, or destroy the base AWS EKS cluster infrastructure including VPC
 - ✅ Security scanning with TFSec
 - ✅ Cost estimation with Infracost
 - ✅ Auto-approval option for development
-- ✅ SPOT instances for cost optimization
+- ✅ ON_DEMAND instances for platform stability
 - ✅ Comprehensive monitoring and alerting
 
 ### Input Parameters
@@ -71,9 +71,9 @@ Auto Approve: false
 #### Development Environment
 - **VPC**: 10.0.0.0/16 with 2 public + 2 private subnets
 - **EKS Cluster**: Latest supported Kubernetes version
-- **Worker Nodes**: 2x t3.medium SPOT instances
+- **Worker Nodes**: 4x ON_DEMAND (2x t3.small system, 2x t3.medium workload)
 - **Add-ons**: VPC-CNI, CoreDNS, EBS CSI Driver
-- **Cost**: ~$88/month
+- **Cost**: ~$180/month (stable platform)
 
 #### Production Environment
 - **VPC**: Enhanced with VPC endpoints and flow logs

@@ -32,6 +32,26 @@ resource "helm_release" "prometheus" {
       # Resource configuration
       resources = var.prometheus_resources
       
+      # Node affinity - prefer system nodes for control plane components
+      affinity = {
+        nodeAffinity = {
+          preferredDuringSchedulingIgnoredDuringExecution = [
+            {
+              weight = 100
+              preference = {
+                matchExpressions = [
+                  {
+                    key = "node-type"
+                    operator = "In"
+                    values = ["control"]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+      
       # Persistence
       persistentVolume = {
         enabled = local.current_env.enable_persistence
@@ -229,6 +249,26 @@ resource "helm_release" "grafana" {
 
     # Resource configuration
     resources = var.grafana_resources
+
+    # Node affinity - prefer system nodes for control plane components
+    affinity = {
+      nodeAffinity = {
+        preferredDuringSchedulingIgnoredDuringExecution = [
+          {
+            weight = 100
+            preference = {
+              matchExpressions = [
+                {
+                  key = "node-type"
+                  operator = "In"
+                  values = ["control"]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
 
     # Persistence
     persistence = {

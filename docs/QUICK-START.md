@@ -35,9 +35,9 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/... (optional)
 
 **What gets created:**
 - VPC with public/private subnets
-- EKS cluster with 2 t3.medium SPOT nodes
+- EKS cluster with ON_DEMAND nodes (2x t3.small system, 2x t3.medium workload)
 - Essential add-ons (VPC-CNI, CoreDNS, EBS CSI)
-- Cost: ~$88/month
+- Cost: ~$180/month (stable ON_DEMAND instances)
 
 ### Step 2: Choose Your Ingress Pattern
 
@@ -246,7 +246,7 @@ After successful deployment, check AWS Console:
 
 ### EKS Dashboard  
 - **Cluster**: eks-learning-lab-dev
-- **Node Groups**: 2 t3.medium SPOT instances
+- **Node Groups**: 4 ON_DEMAND instances (2x t3.small, 2x t3.medium)
 - **Add-ons**: VPC-CNI, CoreDNS, EBS CSI
 
 ### Route53 Dashboard

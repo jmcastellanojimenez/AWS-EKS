@@ -305,12 +305,12 @@ variable "grafana_resources" {
   })
   default = {
     requests = {
-      cpu    = "500m"
-      memory = "1Gi"
+      cpu    = "250m"
+      memory = "512Mi"
     }
     limits = {
-      cpu    = "1000m"
-      memory = "2Gi"
+      cpu    = "500m"
+      memory = "1Gi"
     }
   }
 }

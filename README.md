@@ -8,7 +8,7 @@ This platform implements **7 sequential workflows** that build a complete enterp
 
 ### 🌐 Workflow 1: Foundation Platform
 - **VPC**: Multi-AZ with public/private subnets
-- **EKS Cluster**: Managed control plane + spot node groups  
+- **EKS Cluster**: Managed control plane + ON_DEMAND node groups  
 - **IAM**: IRSA roles for all components
 - **Add-ons**: VPC-CNI, EBS CSI, Load Balancer Controller, Cluster Autoscaler
 
@@ -114,8 +114,8 @@ eks-foundation-platform/
 - Dashboards: Grafana with pre-built dashboards
 - Alerting: Unified alerting with Slack integration
 
-### 💰 **Cost Optimized**
-- 80% spot instances for 60-70% cost savings
+### 💰 **Cost Optimized & Stable**
+- 100% ON_DEMAND instances for platform stability (~$180/month)
 - S3 lifecycle policies for 60-80% storage savings
 - Cluster autoscaler with intelligent scaling
 - Resource right-sizing recommendations
@@ -167,7 +167,7 @@ make destroy ENV=dev
 ✅ **Service mesh** with Istio mTLS  
 ✅ **Database clusters** (PostgreSQL, Redis, Kafka)  
 ✅ **Security scanning** and policy enforcement  
-✅ **Cost optimization** with spot instances  
+✅ **Platform stability** with ON_DEMAND instances  
 
 ### **Enterprise Features**
 🔐 **Zero-trust security** with comprehensive policies  

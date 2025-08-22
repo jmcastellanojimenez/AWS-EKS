@@ -9,7 +9,7 @@ This platform implements a comprehensive, production-ready Kubernetes infrastruc
 - **Security First**: Zero-trust networking, IRSA, mTLS, policy enforcement
 - **Observability Native**: Complete LGTM stack with OpenTelemetry
 - **GitOps Ready**: Declarative configuration management
-- **Cost Optimized**: Spot instances, lifecycle policies, right-sizing
+- **Platform Stability**: ON_DEMAND instances for reliability
 - **Highly Available**: Multi-AZ deployment with auto-scaling
 
 ## 🏗️ High-Level Architecture
@@ -93,7 +93,7 @@ graph TB
 **Components**:
 - **VPC**: Multi-AZ with public/private subnets
 - **EKS Cluster**: Managed control plane (v1.28)
-- **Node Groups**: System (on-demand) + Workload (spot)
+- **Node Groups**: System (t3.small ON_DEMAND) + Workload (t3.medium ON_DEMAND)
 - **IAM**: IRSA roles for all components
 - **Add-ons**: VPC-CNI, EBS CSI, CoreDNS, kube-proxy
 
@@ -240,8 +240,8 @@ graph LR
 
 ## 💰 Cost Architecture
 
-### Cost Optimization Strategies
-- **Compute**: 80% spot instances, cluster autoscaler
+### Platform Stability & Cost Balance
+- **Compute**: 100% ON_DEMAND instances for stability (~$180/month)
 - **Storage**: S3 lifecycle policies, intelligent tiering
 - **Network**: Single NAT gateway (dev), VPC endpoints
 - **Observability**: Data compression, retention policies

@@ -28,7 +28,7 @@ This is an enterprise-grade AWS EKS platform with 7 sequential workflows:
 - EKS authentication issues in CI/CD
 
 ## Architecture Principles
-- Cost optimization with spot instances
+- Platform stability with ON_DEMAND instances
 - Zero-trust security with mTLS
 - Complete observability with metrics, logs, traces
 - GitOps deployment patterns
