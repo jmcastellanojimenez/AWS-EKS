@@ -417,7 +417,9 @@ resource "time_sleep" "wait_for_gatekeeper_crds" {
 }
 
 # Pod Security Standards Policy
-resource "kubernetes_manifest" "pod_security_policy" {
+# NOTE: Commented out to avoid CRD dependency issues during initial deployment
+# Uncomment and apply after Gatekeeper CRDs are installed
+/* resource "kubernetes_manifest" "pod_security_policy" {
   manifest = {
     apiVersion = "templates.gatekeeper.sh/v1beta1"
     kind       = "ConstraintTemplate"
@@ -475,10 +477,11 @@ resource "kubernetes_manifest" "pod_security_policy" {
   }
 
   depends_on = [time_sleep.wait_for_gatekeeper_crds]
-}
+} */
 
 # Apply Pod Security Policy
-resource "kubernetes_manifest" "pod_security_constraint" {
+# NOTE: Commented out - depends on pod_security_policy CRD
+/* resource "kubernetes_manifest" "pod_security_constraint" {
   manifest = {
     apiVersion = "constraints.gatekeeper.sh/v1beta1"
     kind       = "K8sRequiredSecurityContext"
@@ -504,10 +507,11 @@ resource "kubernetes_manifest" "pod_security_constraint" {
   }
 
   depends_on = [kubernetes_manifest.pod_security_policy]
-}
+} */
 
 # Resource Requirements Policy
-resource "kubernetes_manifest" "resource_requirements_policy" {
+# NOTE: Commented out to avoid CRD dependency issues
+/* resource "kubernetes_manifest" "resource_requirements_policy" {
   manifest = {
     apiVersion = "templates.gatekeeper.sh/v1beta1"
     kind       = "ConstraintTemplate"
@@ -562,10 +566,11 @@ resource "kubernetes_manifest" "resource_requirements_policy" {
   }
 
   depends_on = [time_sleep.wait_for_gatekeeper_crds]
-}
+} */
 
 # Apply Resource Requirements Policy
-resource "kubernetes_manifest" "resource_requirements_constraint" {
+# NOTE: Commented out - depends on resource_requirements_policy CRD
+/* resource "kubernetes_manifest" "resource_requirements_constraint" {
   manifest = {
     apiVersion = "constraints.gatekeeper.sh/v1beta1"
     kind       = "K8sRequiredResources"
@@ -586,4 +591,4 @@ resource "kubernetes_manifest" "resource_requirements_constraint" {
   }
 
   depends_on = [kubernetes_manifest.resource_requirements_policy]
-}
+} */

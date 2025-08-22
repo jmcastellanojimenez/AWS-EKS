@@ -390,6 +390,12 @@ resource "null_resource" "verify_tekton_crds" {
 
   triggers = {
     helm_release_revision = helm_release.tekton_pipelines.version
+    script_hash = md5(<<-EOT
+      pipelines.tekton.dev
+      tasks.tekton.dev
+      taskruns.tekton.dev
+      pipelineruns.tekton.dev
+    EOT)
     timestamp = timestamp()
   }
 }
