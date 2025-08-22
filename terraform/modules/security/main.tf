@@ -36,6 +36,10 @@ resource "helm_release" "external_secrets" {
   chart      = "external-secrets"
   version    = var.external_secrets_version
   namespace  = kubernetes_namespace.security.metadata[0].name
+  
+  # Prevent namespace ownership conflicts
+  create_namespace = false
+  depends_on = [kubernetes_namespace.security]
 
   values = [
     yamlencode({
@@ -94,6 +98,10 @@ resource "helm_release" "openbao" {
   chart      = "openbao"
   version    = var.openbao_version
   namespace  = kubernetes_namespace.security.metadata[0].name
+  
+  # Prevent namespace ownership conflicts
+  create_namespace = false
+  depends_on = [kubernetes_namespace.security]
 
   values = [
     yamlencode({
@@ -235,6 +243,10 @@ resource "helm_release" "gatekeeper" {
   chart      = "gatekeeper"
   version    = var.gatekeeper_version
   namespace  = kubernetes_namespace.security.metadata[0].name
+  
+  # Prevent namespace ownership conflicts
+  create_namespace = false
+  depends_on = [kubernetes_namespace.security]
 
   values = [
     yamlencode({
@@ -292,6 +304,10 @@ resource "helm_release" "falco" {
   chart      = "falco"
   version    = var.falco_version
   namespace  = kubernetes_namespace.security.metadata[0].name
+  
+  # Prevent namespace ownership conflicts
+  create_namespace = false
+  depends_on = [kubernetes_namespace.security]
 
   values = [
     yamlencode({

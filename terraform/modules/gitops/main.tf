@@ -40,6 +40,10 @@ resource "helm_release" "argocd" {
   chart      = "argo-cd"
   version    = var.argocd_version
   namespace  = kubernetes_namespace.gitops.metadata[0].name
+  
+  # Prevent namespace ownership conflicts
+  create_namespace = false
+  depends_on = [kubernetes_namespace.gitops]
 
   values = [
     yamlencode({
@@ -195,6 +199,10 @@ resource "helm_release" "tekton_pipelines" {
   chart      = "tekton-pipeline"
   version    = var.tekton_version
   namespace  = kubernetes_namespace.tekton_pipelines.metadata[0].name
+  
+  # Fix namespace ownership conflict
+  create_namespace = false
+  depends_on = [kubernetes_namespace.tekton_pipelines]
 
   values = [
     yamlencode({
