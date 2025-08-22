@@ -178,16 +178,33 @@ resource "helm_release" "argocd" {
   ]
 }
 
+# Create Tekton namespace with Helm-compatible labels
+resource "kubernetes_namespace" "tekton_pipelines" {
+  metadata {
+    name = "tekton-pipelines"
+    labels = {
+      "app.kubernetes.io/name"       = "tekton-pipelines"
+      "app.kubernetes.io/managed-by" = "Helm"
+      "app.kubernetes.io/part-of"    = var.project_name
+    }
+    annotations = {
+      "meta.helm.sh/release-name"      = "tekton-pipelines"
+      "meta.helm.sh/release-namespace" = "tekton-pipelines"
+    }
+  }
+}
+
 # Tekton Pipelines
 resource "helm_release" "tekton_pipelines" {
   name       = "tekton-pipelines"
   repository = "https://cdfoundation.github.io/tekton-helm-chart"
   chart      = "tekton-pipeline"
   version    = var.tekton_version
-  namespace  = "tekton-pipelines"
+  namespace  = kubernetes_namespace.tekton_pipelines.metadata[0].name
   
-  # Let Helm create and manage the namespace
-  create_namespace = true
+  # Don't let Helm create namespace since we manage it
+  create_namespace = false
+  depends_on = [kubernetes_namespace.tekton_pipelines]
 
   values = [
     yamlencode({
@@ -500,7 +517,7 @@ resource "kubernetes_manifest" "build_pipeline" {
     kind       = "Pipeline"
     metadata = {
       name      = "build-and-push"
-      namespace = "tekton-pipelines"
+      namespace = kubernetes_namespace.tekton_pipelines.metadata[0].name
     }
     spec = {
       params = [
@@ -616,7 +633,7 @@ resource "kubernetes_manifest" "trivy_task" {
     kind       = "Task"
     metadata = {
       name      = "trivy-scanner"
-      namespace = "tekton-pipelines"
+      namespace = kubernetes_namespace.tekton_pipelines.metadata[0].name
     }
     spec = {
       workspaces = [
