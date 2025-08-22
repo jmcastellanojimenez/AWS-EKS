@@ -33,6 +33,8 @@ output "gatekeeper_service_name" {
   value       = "gatekeeper-webhook-service"
 }
 
+# NOTE: Commented out until Gatekeeper policies are re-enabled
+/* 
 output "gatekeeper_policies" {
   description = "Deployed Gatekeeper policies"
   value = {
@@ -48,6 +50,7 @@ output "gatekeeper_constraints" {
     resource_requirements_constraint = kubernetes_manifest.resource_requirements_constraint.manifest.metadata.name
   }
 }
+*/
 
 # Falco Outputs
 output "falco_service_name" {
