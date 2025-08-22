@@ -400,11 +400,16 @@ jobs:
       - name: Clean up S3 buckets
         run: |
           # Empty and delete LGTM S3 buckets
+          echo "🧹 Cleaning up LGTM S3 buckets..."
           for bucket in ${{ env.ENVIRONMENT }}-lgtm-mimir ${{ env.ENVIRONMENT }}-lgtm-loki ${{ env.ENVIRONMENT }}-lgtm-tempo; do
             FULL_BUCKET="${bucket}-${{ secrets.AWS_ACCOUNT_ID }}"
             if aws s3api head-bucket --bucket "${FULL_BUCKET}" 2>/dev/null; then
-              echo "Emptying bucket: ${FULL_BUCKET}"
+              echo "  Emptying bucket: ${FULL_BUCKET}"
               aws s3 rm "s3://${FULL_BUCKET}" --recursive || true
+              echo "  Deleting bucket: ${FULL_BUCKET}"
+              aws s3api delete-bucket --bucket "${FULL_BUCKET}" --region ${{ env.AWS_REGION }} || true
+            else
+              echo "  Bucket not found: ${FULL_BUCKET}"
             fi
           done
       
@@ -513,6 +518,43 @@ jobs:
               aws ec2 delete-security-group --group-id "$sg" --region ${{ env.AWS_REGION }} || true
             fi
           done
+      
+      - name: Clean up Foundation S3 buckets
+        run: |
+          # Delete Foundation module S3 buckets (prometheus, loki, tempo)
+          echo "🗑️ Cleaning up Foundation module S3 buckets..."
+          
+          BUCKETS=(
+            "eks-platform-${{ env.ENVIRONMENT }}-prometheus"
+            "eks-platform-${{ env.ENVIRONMENT }}-loki"
+            "eks-platform-${{ env.ENVIRONMENT }}-tempo"
+          )
+          
+          for bucket in "${BUCKETS[@]}"; do
+            echo "Checking bucket: $bucket"
+            if aws s3 ls "s3://$bucket" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+              echo "📦 Found bucket: $bucket - deleting contents and bucket..."
+              
+              # Delete all versions and delete markers
+              aws s3api delete-objects --bucket "$bucket" --region ${{ env.AWS_REGION }} \
+                --delete "$(aws s3api list-object-versions --bucket "$bucket" --region ${{ env.AWS_REGION }} \
+                --output json --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')" \
+                >/dev/null 2>&1 || true
+              
+              aws s3api delete-objects --bucket "$bucket" --region ${{ env.AWS_REGION }} \
+                --delete "$(aws s3api list-object-versions --bucket "$bucket" --region ${{ env.AWS_REGION }} \
+                --output json --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')" \
+                >/dev/null 2>&1 || true
+              
+              # Delete the bucket
+              aws s3 rb "s3://$bucket" --region ${{ env.AWS_REGION }} --force >/dev/null 2>&1 || true
+              echo "✅ Bucket $bucket cleanup completed"
+            else
+              echo "ℹ️ Bucket $bucket not found or already deleted"
+            fi
+          done
+          
+          echo "🎯 Foundation S3 bucket cleanup completed"
       
       - name: Destroy Foundation
         working-directory: terraform/environments/${{ env.ENVIRONMENT }}

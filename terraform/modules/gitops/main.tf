@@ -176,8 +176,6 @@ resource "helm_release" "argocd" {
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace.gitops]
 }
 
 # Create Tekton namespace
@@ -233,8 +231,6 @@ resource "helm_release" "tekton_pipelines" {
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace.tekton_pipelines]
 }
 
 # Tekton Triggers (included in tekton-pipeline chart, not a separate release)

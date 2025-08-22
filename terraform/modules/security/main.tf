@@ -87,8 +87,6 @@ resource "helm_release" "external_secrets" {
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace.security]
 }
 
 # OpenBao (HashiCorp Vault alternative)
@@ -232,8 +230,6 @@ resource "helm_release" "openbao" {
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace.security]
 }
 
 # OPA Gatekeeper
@@ -293,8 +289,6 @@ resource "helm_release" "gatekeeper" {
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace.security]
 }
 
 # Falco Runtime Security
@@ -414,8 +408,6 @@ resource "helm_release" "falco" {
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace.security]
 }
 
 # Wait for OPA Gatekeeper CRDs to be available
