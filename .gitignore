@@ -133,6 +133,7 @@ azure/
 
 # Claude Code / AI Assistant Files
 .claude/
+.claude_code
 CLAUDE.md
 *.md.bak
 
@@ -143,3 +144,31 @@ get-pip.py
 test-execution-report.md
 *-report.md
 *-results.json
+
+# Excluded Infrastructure Components (Manual deployment only)
+# These directories contain components that were moved to manual runbooks
+terraform/modules/lgtm-observability/
+terraform/modules/observability/
+terraform/modules/gitops/
+terraform/modules/argocd/
+terraform/modules/tekton/
+terraform/modules/security/
+terraform/modules/service-mesh/
+terraform/modules/data-services/
+argocd/
+configs/
+helm-values/
+tekton/
+applications/
+k8s-manifests/
+k8s/
+terraform/alb-pattern/
+terraform/nginx-pattern/
+terraform/shared/
+terraform/environments/*/03-lgtm/
+terraform/environments/*/lgtm-observability.tf
+scripts/*gitops*
+scripts/*observability*
+scripts/*security*
+scripts/*servicemesh*
+scripts/*crd*
