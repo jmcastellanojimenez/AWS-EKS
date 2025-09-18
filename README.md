@@ -21,6 +21,16 @@ Complex services are deployed manually using detailed runbooks:
 6. **🛡️ Service Mesh** - Istio, Kiali, traffic management
 7. **📊 Data Services** - PostgreSQL, Redis, Kafka
 
+```markdown
+## Planned Ingress Migration: Ambassador → Envoy Gateway
+
+**Why migrate?**
+- **Traditional Ingress**: Only handles basic HTTP/HTTPS traffic
+- **Envoy Gateway**: Complete API Gateway that does ingress + much more
+- Native K8s integration with reduced complexity
+- Built-in monitoring, Argo support, and advanced features (rate limiting, auth, etc.)
+```
+
 ## Quick Start
 
 ### Prerequisites
